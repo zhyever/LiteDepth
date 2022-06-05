@@ -70,6 +70,24 @@ def parse_args():
 def main():
     args = parse_args()
 
+    assert args.out or args.eval or args.format_only or args.show \
+        or args.show_dir, \
+        ('Please specify at least one operation (save/eval/format/show the '
+         'results / save the results) with the argument "--out", "--eval"'
+         ', "--format-only", "--show" or "--show-dir"')
+
+    if args.eval and args.format_only:
+        raise ValueError('--eval and --format_only cannot be both specified')
+
+    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
+        raise ValueError('The output file must be a pkl file.')
+    
+    if args.out:
+        print(os.path.dirname(args.out))
+        mmcv.mkdir_or_exist(os.path.dirname(args.out))
+
+    cfg = mmcv.Config.fromfile(args.config)
+
     # import modules from plguin/xx, registry will be updated
     if hasattr(cfg, 'plugin'):
         if cfg.plugin:
@@ -94,23 +112,6 @@ def main():
                 print(_module_path)
                 plg_lib = importlib.import_module(_module_path)
 
-    assert args.out or args.eval or args.format_only or args.show \
-        or args.show_dir, \
-        ('Please specify at least one operation (save/eval/format/show the '
-         'results / save the results) with the argument "--out", "--eval"'
-         ', "--format-only", "--show" or "--show-dir"')
-
-    if args.eval and args.format_only:
-        raise ValueError('--eval and --format_only cannot be both specified')
-
-    if args.out is not None and not args.out.endswith(('.pkl', '.pickle')):
-        raise ValueError('The output file must be a pkl file.')
-    
-    if args.out:
-        print(os.path.dirname(args.out))
-        mmcv.mkdir_or_exist(os.path.dirname(args.out))
-
-    cfg = mmcv.Config.fromfile(args.config)
     if args.options is not None:
         cfg.merge_from_dict(args.options)
     # set cudnn_benchmark
@@ -123,7 +124,7 @@ def main():
         ]
         cfg.data.test.pipeline[1].flip = True
     cfg.model.pretrained = None
-    cfg.data.test.test_mode = True
+    # cfg.data.test.test_mode = True
 
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':

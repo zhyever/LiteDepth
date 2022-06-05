@@ -1,3 +1,8 @@
 [submodule "Monocular-Depth-Estimation-Toolbox"]
 	path = Monocular-Depth-Estimation-Toolbox
 	url = git@github.com:zhyever/Monocular-Depth-Estimation-Toolbox.git
+
+
+[submodule "mmclassification"]
+	path = mmclassification
+	url = git@github.com:open-mmlab/mmclassification.git
