@@ -1,6 +1,8 @@
-from .encoder_decoder import DepthEncoderDecoderTF
+from .encoder_decoder import DepthEncoderDecoderMobileTF
+from .encoder_decoder_downsample import DepthEncoderDecoderMobile
 
 
 __all__ = [
-    'DepthEncoderDecoderTF'
+    'DepthEncoderDecoderMobile',
+    'DepthEncoderDecoderMobileTF',
 ]

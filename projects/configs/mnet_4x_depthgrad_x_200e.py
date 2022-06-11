@@ -1,31 +1,32 @@
 _base_ = [
-    '../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
+    '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
 ]
 
 plugin=True
 plugin_dir='projects/toolbox_plugin/'
 
+custom_imports=dict(imports='mmcls.models', allow_failed_imports=False) 
+
 # model settings
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
-    type='DepthEncoderDecoderTF',
+    type='DepthEncoderDecoderMobile',
+    init_cfg=dict(
+        type='Pretrained', 
+        checkpoint='https://download.openmmlab.com/mmclassification/v0/mobilenet_v3/convert/mobilenet_v3_small-8427ecf0.pth'),
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        num_stages=4,
-        out_indices=(0, 1, 2, 3, 4),
-        style='pytorch',
-        norm_cfg=norm_cfg,
-        init_cfg=dict(
-            type='Pretrained', checkpoint='torchvision://resnet50')),
+        type='mmcls.MobileNetV3', 
+        arch='small',
+        out_indices = (0, 1, 2, 4, 9)), # the most small version
     decode_head=dict(
-        type='DenseDepthHead',
+        type='DenseDepthHeadMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[64, 256, 512, 1024, 2048],
-        up_sample_channels=[128, 256, 512, 1024, 2048],
-        channels=128, # last one
+        in_channels=[16, 16, 24, 40, 96],
+        up_sample_channels=[16, 24, 32, 64, 96],
+        channels=16, # last one
+        # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
             type='SigLoss', valid_mask=True, loss_weight=1.0)),
@@ -39,14 +40,13 @@ dataset_type = 'MobileAI2022Dataset'
 data_root = 'data/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
-crop_size= (416, 544)
+# crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='DepthLoadAnnotations'),
-    # dict(type='NYUCrop', depth=True),
+    dict(type='DepthLoadAnnotationsV2', with_x_grad=True),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
-    dict(type='RandomCrop', crop_size=(416, 544)),
+    dict(type='RandomCropV2', crop_size=[(384, 512), (480, 640)]),
     dict(type='ColorAug', prob=1, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='DefaultFormatBundle'),
@@ -111,6 +111,8 @@ lr_config = dict(
 )
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=24)
-checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=6)
-evaluation = dict(by_epoch=True, interval=3, pre_eval=True)
+runner = dict(type='EpochBasedRunner', max_epochs=200)
+checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
+evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
+
+find_unused_parameters=True

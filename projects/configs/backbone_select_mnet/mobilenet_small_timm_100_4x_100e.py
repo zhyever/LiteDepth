@@ -1,38 +1,36 @@
 _base_ = [
-    '../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
+    '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
 ]
 
 plugin=True
 plugin_dir='projects/toolbox_plugin/'
 
+custom_imports=dict(imports='mmcls.models', allow_failed_imports=False) 
+
 # model settings
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
-    type='DepthEncoderDecoderTF',
+    type='DepthEncoderDecoderMobile',
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        num_stages=4,
-        out_indices=(0, 1, 2, 3, 4),
-        style='pytorch',
-        norm_cfg=norm_cfg,
-        init_cfg=dict(
-            type='Pretrained', checkpoint='torchvision://resnet50')),
+        type="mmcls.TIMMBackbone",
+        pretrained=True,
+        model_name="mobilenetv3_small_100",
+        features_only=True),
     decode_head=dict(
-        type='DenseDepthHead',
+        type='DenseDepthHeadMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[64, 256, 512, 1024, 2048],
-        up_sample_channels=[128, 256, 512, 1024, 2048],
-        channels=128, # last one
+        in_channels=[16, 16, 24, 48, 576],
+        up_sample_channels=[32, 64, 128, 256, 512],
+        channels=32, # last one
+        # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
             type='SigLoss', valid_mask=True, loss_weight=1.0)),
     # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
-
 
 # dataset settings Only for test
 dataset_type = 'MobileAI2022Dataset'
@@ -111,6 +109,8 @@ lr_config = dict(
 )
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=24)
-checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=6)
-evaluation = dict(by_epoch=True, interval=3, pre_eval=True)
+runner = dict(type='EpochBasedRunner', max_epochs=100)
+checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
+evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
+
+find_unused_parameters=True

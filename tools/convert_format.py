@@ -17,6 +17,8 @@ if __name__ == '__main__':
 
     file_names = os.listdir(args.input_path)
 
+    mmcv.mkdir_or_exist(args.output_path)
+    
     for name in file_names:
 
         file_path = os.path.join(args.input_path, name)
