@@ -104,11 +104,12 @@ def main():
     loader_indices = data_loader.batch_sampler
 
     max_depth = 0
+    max_depth_grad = 0
     for batch_indices, data in zip(loader_indices, data_loader):
-        max_depth = max(torch.max(data['depth_gt']._data[0]), max_depth)
+        # max_depth = max(torch.max(data['depth_gt']._data[0]), max_depth)
+        max_depth_grad = max(torch.max(data['depth_gt_grad']._data[0]), max_depth_grad)
 
-
-        print(max_depth)
+        print(max_depth_grad)
 
 
 if __name__ == '__main__':

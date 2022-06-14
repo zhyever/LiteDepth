@@ -60,7 +60,9 @@ class RandomCropV2(object):
         results['img_shape'] = img_shape
 
         # crop depth
-        results["depth_gt"] = self.crop(results["depth_gt"], crop_bbox)
+        for key in results['depth_fields']:
+            results[key] = self.crop(results[key], crop_bbox)
+
         results["depth_shape"] = img_shape
 
         return results

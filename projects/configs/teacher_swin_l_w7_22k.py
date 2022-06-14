@@ -5,27 +5,41 @@ _base_ = [
 plugin=True
 plugin_dir='projects/toolbox_plugin/'
 
-custom_imports=dict(imports='mmcls.models', allow_failed_imports=False) 
-
 # model settings
+backbone_norm_cfg = dict(type='LN', requires_grad=True)
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
     type='DepthEncoderDecoderMobile',
-    init_cfg=dict(
-        type='Pretrained', 
-        checkpoint='https://download.openmmlab.com/mmclassification/v0/mobilenet_v3/convert/mobilenet_v3_small-8427ecf0.pth'),
+    pretrained='https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_large_patch4_window7_224_22k.pth',
     backbone=dict(
-        type='mmcls.MobileNetV3', 
-        arch='small',
-        out_indices = (0, 1, 2, 4, 9)), # the most small version
+        type='SwinTransformer',
+        embed_dims=192,
+        depths=[2, 2, 18, 2],
+        num_heads=[6, 12, 24, 48],
+        window_size=7,
+        pretrain_img_size=224,
+        patch_size=4,
+        mlp_ratio=4,
+        strides=(4, 2, 2, 2),
+        out_indices=(0, 1, 2, 3),
+        qkv_bias=True,
+        qk_scale=None,
+        patch_norm=True,
+        drop_rate=0.,
+        attn_drop_rate=0.,
+        drop_path_rate=0.3,
+        use_abs_pos_embed=False,
+        act_cfg=dict(type='GELU'),
+        norm_cfg=backbone_norm_cfg,
+        pretrain_style='official'), # the most small version
     decode_head=dict(
         type='DenseDepthHeadMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[16, 16, 24, 40, 96],
-        up_sample_channels=[16, 24, 32, 64, 96],
-        channels=16, # last one
+        in_channels=[192, 384, 768, 1536],
+        up_sample_channels=[192, 384, 768, 1536],
+        channels=192, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
@@ -43,7 +57,7 @@ img_norm_cfg = dict(
 # crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='DepthLoadAnnotationsV2', with_x_grad=True),
+    dict(type='DepthLoadAnnotations'),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
     dict(type='RandomCropV2', crop_size=[(384, 512), (480, 640)]),
@@ -100,7 +114,17 @@ data = dict(
 
 # optimizer
 max_lr=1e-4
-optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
+optimizer = dict(
+    type='AdamW',
+    lr=max_lr,
+    betas=(0.9, 0.999),
+    weight_decay=0.01,
+    paramwise_cfg=dict(
+        custom_keys={
+            'absolute_pos_embed': dict(decay_mult=0.),
+            'relative_position_bias_table': dict(decay_mult=0.),
+            'norm': dict(decay_mult=0.),
+        }))
 # learning policy
 lr_config = dict(
     policy='OneCycle',

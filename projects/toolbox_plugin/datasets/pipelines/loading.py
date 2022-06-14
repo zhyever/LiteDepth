@@ -4,6 +4,7 @@ import numpy as np
 import os.path as osp
 from PIL import Image
 from depth.datasets.builder import PIPELINES
+from scipy.ndimage.filters import gaussian_filter
 
 @PIPELINES.register_module()
 class DepthLoadAnnotationsV2(object):
@@ -19,30 +20,16 @@ class DepthLoadAnnotationsV2(object):
     def __init__(self,
                  file_client_args=dict(backend='disk'),
                  imdecode_backend='pillow',
-                 with_x_grad=False,
-                 with_y_grad=False,
                  with_bins_cls=False,
                  bins_num=8):
         self.file_client_args = file_client_args.copy()
         self.file_client = None
         self.imdecode_backend = imdecode_backend
 
-        self.with_x_grad = with_x_grad
-        self.with_y_grad = with_y_grad
         self.with_bins_cls = with_bins_cls
         self.bins_num = bins_num
 
-    def generate_x_grad(self, depth_gt):
-        init_x_grad = np.matrix(np.ones(depth_gt.shape) * np.inf)
-
-        # convert invalid depth -> inf
-        depth_gt[depth_gt == 0] = np.inf
-
-
-        invalid_mask = depth_gt == 0
-        print(invalid_mask)
-
-        exit(100)
+        self.max=0
 
     def __call__(self, results):
         """Call function to load multiple types annotations.
@@ -73,8 +60,6 @@ class DepthLoadAnnotationsV2(object):
 
         # avoid potential bugs
         _depth_gt = copy.deepcopy(depth_gt)
-        if self.with_x_grad:
-            depth_x_grad = self.generate_x_grad(_depth_gt)
 
         return results
 

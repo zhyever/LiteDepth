@@ -21,4 +21,3 @@ class DepthEncoderDecoderMobile(DepthEncoderDecoder):
             x = self.neck(x)
     
         return x
-
