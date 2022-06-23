@@ -9,17 +9,23 @@ class RandomCropV2(object):
     Args:
         crop_size (tuple): Expected size after cropping, [(h, w)].
     """
-    def __init__(self, crop_size):
+    def __init__(self, crop_size, pick_mode=False):
         self.crop_size = crop_size
         self.crop_size_h_min = crop_size[0][0]
         self.crop_size_h_max = crop_size[1][0]
         self.crop_size_w_min = crop_size[0][1]
         self.crop_size_w_max = crop_size[1][1]
+        self.pick_mode = pick_mode
 
     def random_select(self):
-        select_h = random.randint(self.crop_size_h_min, self.crop_size_h_max + 1)
-        select_w = random.randint(self.crop_size_w_min, self.crop_size_w_max + 1)
-        return (select_h, select_w)
+        if self.pick_mode:
+            select_index = random.randint(0, len(self.crop_size) - 1)
+            return self.crop_size[select_index]
+        
+        else:
+            select_h = random.randint(self.crop_size_h_min, self.crop_size_h_max + 1)
+            select_w = random.randint(self.crop_size_w_min, self.crop_size_w_max + 1)
+            return (select_h, select_w)
         
     def get_crop_bbox(self, img):
         """Randomly get a crop bounding box."""

@@ -6,3 +6,7 @@
 [submodule "mmclassification"]
 	path = mmclassification
 	url = git@github.com:open-mmlab/mmclassification.git
+
+[submodule "pytorch-image-models"]
+	path = pytorch-image-models
+	url = git@github.com:rwightman/pytorch-image-models.git

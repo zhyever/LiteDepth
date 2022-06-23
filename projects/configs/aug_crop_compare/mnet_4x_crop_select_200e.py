@@ -11,19 +11,21 @@ custom_imports=dict(imports='mmcls.models', allow_failed_imports=False)
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
     type='DepthEncoderDecoderMobile',
+    init_cfg=dict(
+        type='Pretrained', 
+        checkpoint='https://download.openmmlab.com/mmclassification/v0/mobilenet_v3/convert/mobilenet_v3_small-8427ecf0.pth'),
     backbone=dict(
-        type="mmcls.TIMMBackbone",
-        pretrained=True,
-        model_name="mobilenetv3_large_100_miil_in21k",
-        features_only=True),
+        type='mmcls.MobileNetV3', 
+        arch='small',
+        out_indices = (0, 1, 2, 4, 9)), # the most small version
     decode_head=dict(
         type='DenseDepthHeadMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[16, 24, 40, 112, 960],
-        up_sample_channels=[32, 64, 128, 256, 512],
-        channels=32, # last one
+        in_channels=[16, 16, 24, 40, 96],
+        up_sample_channels=[16, 24, 32, 64, 96],
+        channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
@@ -32,19 +34,19 @@ model = dict(
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
+
 # dataset settings Only for test
 dataset_type = 'MobileAI2022Dataset'
 data_root = 'data/'
 img_norm_cfg = dict(
-    mean=[0.0, 0.0, 0.0], std=[1.0, 1.0, 1.0], to_rgb=True)
-crop_size= (416, 544)
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+# crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='DepthLoadAnnotations'),
-    # dict(type='NYUCrop', depth=True),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
-    dict(type='RandomCrop', crop_size=(416, 544)),
+    dict(type='RandomCropV2', pick_mode=True, crop_size=[(384, 512), (480, 640)]),
     dict(type='ColorAug', prob=1, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='DefaultFormatBundle'),
@@ -109,7 +111,7 @@ lr_config = dict(
 )
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=100)
+runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
 evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
 

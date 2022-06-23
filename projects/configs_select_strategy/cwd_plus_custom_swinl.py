@@ -13,7 +13,7 @@ teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
         type='Pretrained', 
-        checkpoint='nfs/mobileAI2022/teacher/swin_l_w7_22k/epoch_200.pth'),
+        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup.pth'),
     backbone=dict(
         type='SwinTransformer',
         embed_dims=192,
@@ -41,8 +41,9 @@ teacher_model_cfg = dict(
         min_depth=1e-3,
         max_depth=40,
         in_channels=[192, 384, 768, 1536],
-        up_sample_channels=[192, 384, 768, 1536],
-        channels=192, # last one
+        up_sample_channels=[24, 32, 64, 96],
+        channels=16, # last one
+        extend_up_conv_num=1,
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
@@ -53,19 +54,17 @@ teacher_model_cfg = dict(
 
 student_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
-    init_cfg=dict(
-        type='Pretrained', 
-        checkpoint='https://download.openmmlab.com/mmclassification/v0/mobilenet_v3/convert/mobilenet_v3_small-8427ecf0.pth'),
     backbone=dict(
-        type='mmcls.MobileNetV3', 
-        arch='small',
-        out_indices = (0, 1, 2, 4, 9)), # the most small version
+        type="mmcls.TIMMBackbone",
+        pretrained=True,
+        model_name="tf_mobilenetv3_small_minimal_100",
+        features_only=True),
     decode_head=dict(
         type='DenseDepthHeadMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[16, 16, 24, 40, 96],
+        in_channels=[16, 16, 24, 48, 576],
         up_sample_channels=[16, 24, 32, 64, 96],
         channels=16, # last one
         # align_corners=False, # for upsample
@@ -80,25 +79,41 @@ model=dict(
     type='DistillWrapper',
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    teacher_select_de_index=0,
-    student_select_de_index=0,
-    distill_loss=dict(type='MSELoss', loss_weight=0.1),
-    train_cfg=dict(),
-    test_cfg=dict(mode='whole')
+    distill_loss=[
+        dict(
+            type='CustomDistll', 
+            loss_weight=100, 
+            tau=4,
+            depth_max=40,
+            depth_min=1e-3,
+            mode='LID',
+            num_bins=40),
+        dict(
+            type='ChannelWiseDivergence', 
+            loss_weight=1, 
+            tau=4)],
+    train_cfg=dict(distill_loss_weight=[1, 1]),
+    test_cfg=dict(mode='whole'),
+    img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),
+    img_norm_cfg_student=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]),
 )
 
 # dataset settings Only for test
 dataset_type = 'MobileAI2022Dataset'
 data_root = 'data/'
+# img_norm_cfg = dict(
+#     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True) # teacher
+# img_norm_cfg = dict(
+#     mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5], to_rgb=True) # incpt stu
 img_norm_cfg = dict(
-    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+    mean=[0., 0., 0.], std=[1., 1., 1.], to_rgb=True)
 # crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='DepthLoadAnnotations'),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
-    dict(type='RandomCropV2', crop_size=[(384, 512), (480, 640)]),
+    dict(type='RandomCropV2', pick_mode=True, crop_size=[(384, 512), (480, 640)]),
     dict(type='ColorAug', prob=1, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='DefaultFormatBundle'),
@@ -151,7 +166,7 @@ data = dict(
 )
 
 # optimizer
-max_lr=1e-4
+max_lr=3e-4
 optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
 # learning policy
 lr_config = dict(

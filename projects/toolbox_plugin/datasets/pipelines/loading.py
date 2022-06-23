@@ -4,7 +4,6 @@ import numpy as np
 import os.path as osp
 from PIL import Image
 from depth.datasets.builder import PIPELINES
-from scipy.ndimage.filters import gaussian_filter
 
 @PIPELINES.register_module()
 class DepthLoadAnnotationsV2(object):

@@ -18,6 +18,6 @@ class DepthEncoderDecoderMobileTF(DepthEncoderDecoderMobile):
             input=out,
             size=(480, 640),
             mode='bilinear',
-            align_corners=self.align_corners)
+            align_corners=True)
 
         return out

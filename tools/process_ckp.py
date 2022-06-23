@@ -1,6 +1,6 @@
 import torch
 
-ckp = torch.load("nfs/mobileAI2022/teacher/swin_l_w7_22k/epoch_200.pth")
+ckp = torch.load("nfs/checkpoints/swinl_w7_22k_lightdecoder.pth")
 
 print(ckp.keys())
 
@@ -10,4 +10,4 @@ for k,v in ckp['state_dict'].items():
     ckp_processed[new_k] = v
 ckp['state_dict'] = ckp_processed
 
-torch.save(ckp, "nfs/checkpoints/swinl_w7_22k_4x.pth")
+torch.save(ckp, "nfs/checkpoints/swinl_w7_22k_lightdecoder_prefix.pth")

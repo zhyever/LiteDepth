@@ -14,6 +14,8 @@ from mmcv.runner import force_fp32
 
 from mmcv.cnn.bricks.activation import build_activation_layer
 
+from mmcv.cnn import ConvModule, xavier_init
+
 class UpSample(nn.Sequential):
     '''Fusion module
 
@@ -48,6 +50,7 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                  up_sample_channels,
                  with_depth_grad=False,
                  loss_depth_grad=None,
+                 extend_up_conv_num=0,
                  **kwargs):
         super(DenseDepthHeadMobile, self).__init__(**kwargs)
 
@@ -83,6 +86,32 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
         if self.with_depth_grad:
             self.loss_depth_grad = build_loss(loss_depth_grad)
 
+        self.extend_convs = nn.ModuleList()
+        self.extend_up_conv_num = extend_up_conv_num
+        for i in range(self.extend_up_conv_num):
+            self.extend_convs.append(
+                ConvModule(
+                    in_channels=up_sample_channels[0],
+                    out_channels=self.channels,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    act_cfg=self.act_cfg,
+                    norm_cfg=self.norm_cfg
+                )
+            )
+        self.hack_act = build_activation_layer(self.act_cfg)
+
+    # default init_weights for conv(msra) and norm in ConvModule
+    def init_weights(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+                
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                xavier_init(m, distribution='uniform')
+
     def forward_train(self, 
                       img, 
                       inputs, 
@@ -105,6 +134,9 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
             dict[str, Tensor]: a dictionary of loss components
         """
 
+        # for i in inputs:
+        #     print(i.shape)
+
         outputs = {}
 
         if return_immediately:
@@ -122,6 +154,17 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                     temp_feat_list.append(temp_feat)
                     temp_feat_before_act_list.append(temp_feat_before_act)
 
+            for i in range(self.extend_up_conv_num):
+                temp_feat = F.interpolate(
+                    temp_feat_list[-1], 
+                    size=[temp_feat_list[-1].size(2)*2, temp_feat_list[-1].size(3)*2], 
+                    mode='bilinear', 
+                    align_corners=True)
+                temp_feat_before_act = self.extend_convs[i](temp_feat, activate=False)
+                temp_feat = self.hack_act(temp_feat_before_act)
+                temp_feat_list.append(temp_feat)
+                temp_feat_before_act_list.append(temp_feat_before_act)
+                
             depth_pred = self.depth_pred(temp_feat_list[-1])
 
         else:
@@ -136,7 +179,15 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                     up_feat = temp_feat_list[index-1]
                     temp_feat = self.conv_list[index](up_feat, skip_feat)
                     temp_feat_list.append(temp_feat)
-
+                    
+            for i in range(self.extend_up_conv_num):
+                temp_feat = F.interpolate(
+                    temp_feat_list[-1], 
+                    size=[temp_feat_list[-1].size(2)*2, temp_feat_list[-1].size(3)*2], 
+                    mode='bilinear', 
+                    align_corners=True)
+                temp_feat = self.extend_convs[i](temp_feat)
+                temp_feat_list.append(temp_feat)
             depth_pred = self.depth_pred(temp_feat_list[-1])
 
 
@@ -145,7 +196,7 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
         losses = self.losses(outputs, depth_gt)
 
         if return_immediately:
-            return temp_feat_before_act_list, outputs, losses
+            return temp_feat_list, temp_feat_before_act_list, outputs, losses
         
         else:
             return losses
@@ -164,7 +215,7 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                 input=v,
                 size=depth_gt.shape[2:],
                 mode='bilinear',
-                align_corners=self.align_corners,
+                align_corners=True,
                 warning=False)
             resized_output[k] = resized_v
         
@@ -207,6 +258,15 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                 up_feat = temp_feat_list[index-1]
                 temp_feat = self.conv_list[index](up_feat, skip_feat)
                 temp_feat_list.append(temp_feat)
+
+        for i in range(self.extend_up_conv_num):
+            temp_feat = F.interpolate(
+                temp_feat_list[-1], 
+                size=[temp_feat_list[-1].size(2)*2, temp_feat_list[-1].size(3)*2], 
+                mode='bilinear', 
+                align_corners=True)
+            temp_feat = self.extend_convs[i](temp_feat)
+            temp_feat_list.append(temp_feat)
 
         output = self.depth_pred(temp_feat_list[-1])
 
