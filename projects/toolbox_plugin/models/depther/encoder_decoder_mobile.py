@@ -15,6 +15,20 @@ class DepthEncoderDecoderMobile(DepthEncoderDecoder):
         super(DepthEncoderDecoderMobile, self).__init__(**kwarg)
         self.downsample_ratio = downsample_ratio
 
+    def encode_decode(self, img, img_metas, rescale=True):
+        """Encode images with backbone and decode into a depth estimation
+        map of the same size as input."""
+        
+        x = self.extract_feat(img)
+        out = self._decode_head_forward_test(x, img_metas)
+        # crop the pred depth to the certain range.
+        out = torch.clamp(out, min=self.decode_head.min_depth, max=self.decode_head.max_depth)
+        if rescale:
+            out = resize(
+                input=out,
+                size=img.shape[2:],
+                mode='nearest')
+        return out
 
     def extract_feat(self, img):
         """Extract features from images."""

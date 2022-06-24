@@ -20,23 +20,22 @@ class UpSample(nn.Sequential):
     '''Fusion module
 
     From Adabins
+    Reduce to only one 3x3 conv
     
     '''
     def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None):
         super(UpSample, self).__init__()
         self.convA = ConvModule(skip_input, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-        self.convB = ConvModule(output_features, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
         self.hack_act = build_activation_layer(act_cfg)
 
     def forward(self, x, concat_with, return_immediately=False):
         up_x = F.interpolate(x, size=[concat_with.size(2), concat_with.size(3)], mode='bilinear', align_corners=True)
         if return_immediately:
-            temp = self.convA(torch.cat([up_x, concat_with], dim=1))
-            temp = self.convB(temp, activate=False)
+            temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
             out = self.hack_act(temp)
             return out, temp
         else:
-            return self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)))
+            return self.convA(torch.cat([up_x, concat_with], dim=1))
 
 @HEADS.register_module()
 class DenseDepthHeadMobile(DepthBaseDecodeHead):
@@ -214,9 +213,8 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
             resized_v = resize(
                 input=v,
                 size=depth_gt.shape[2:],
-                mode='bilinear',
-                align_corners=True,
-                warning=False)
+                mode='nearest',
+                align_corners=None)
             resized_output[k] = resized_v
         
         loss['loss_depth'] = self.loss_decode(resized_output['depth_pred'], depth_gt)
