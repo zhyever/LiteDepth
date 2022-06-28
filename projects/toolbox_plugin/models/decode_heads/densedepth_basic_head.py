@@ -20,25 +20,39 @@ class UpSample(nn.Sequential):
     '''Fusion module
 
     From Adabins
-    Reduce to only one 3x3 conv
+    Compared the original version, this upsample layer remove the final 3x3 conv
     
     '''
-    def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None):
+    def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None, final_layer=False):
         super(UpSample, self).__init__()
+        self.final_layer = final_layer
         self.convA = ConvModule(skip_input, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+        if self.final_layer is not True:
+            self.convB = ConvModule(output_features, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
         self.hack_act = build_activation_layer(act_cfg)
 
     def forward(self, x, concat_with, return_immediately=False):
         up_x = F.interpolate(x, size=[concat_with.size(2), concat_with.size(3)], mode='bilinear', align_corners=True)
-        if return_immediately:
-            temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
-            out = self.hack_act(temp)
-            return out, temp
+
+        if self.final_layer:
+            if return_immediately:
+                temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
+                out = self.hack_act(temp)
+                return out, temp
+            else:
+                return self.convA(torch.cat([up_x, concat_with], dim=1))
+        
         else:
-            return self.convA(torch.cat([up_x, concat_with], dim=1))
+            if return_immediately:
+                temp = self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)), activate=False)
+                out = self.hack_act(temp)
+                return out, temp
+            else:
+                return self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)))
+
 
 @HEADS.register_module()
-class DenseDepthHeadMobile(DepthBaseDecodeHead):
+class DenseDepthHeadBasicMobile(DepthBaseDecodeHead):
     """DenseDepthHead.
     This head is implemented of `DenseDepth: <https://arxiv.org/abs/1812.11941>`_.
     Args:
@@ -51,7 +65,7 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                  loss_depth_grad=None,
                  extend_up_conv_num=0,
                  **kwargs):
-        super(DenseDepthHeadMobile, self).__init__(**kwargs)
+        super(DenseDepthHeadBasicMobile, self).__init__(**kwargs)
 
         self.up_sample_channels = up_sample_channels[::-1]
         self.in_channels = self.in_channels[::-1]
@@ -71,12 +85,20 @@ class DenseDepthHeadMobile(DepthBaseDecodeHead):
                         padding=0,
                         act_cfg=None
                     ))
+            elif index == len(self.in_channels) - 1:
+                self.conv_list.append(
+                    UpSample(skip_input=in_channel + up_channel_temp,
+                             output_features=up_channel,
+                             norm_cfg=self.norm_cfg,
+                             act_cfg=self.act_cfg,
+                             final_layer=True))
             else:
                 self.conv_list.append(
                     UpSample(skip_input=in_channel + up_channel_temp,
                              output_features=up_channel,
                              norm_cfg=self.norm_cfg,
-                             act_cfg=self.act_cfg))
+                             act_cfg=self.act_cfg,
+                             final_layer=False))
 
             # save earlier fusion target
             up_channel_temp = up_channel

@@ -20,7 +20,7 @@ class UpSample(nn.Sequential):
     '''Fusion module
 
     From Adabins
-    For teacher model (effective)
+    For swin teacher model (effective)
     
     '''
     def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None):
@@ -39,7 +39,7 @@ class UpSample(nn.Sequential):
             return self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)))
 
 @HEADS.register_module()
-class DenseDepthHeadTeacherMobile(DepthBaseDecodeHead):
+class DenseDepthHeadSwinMobile(DepthBaseDecodeHead):
     """DenseDepthHead.
     This head is implemented of `DenseDepth: <https://arxiv.org/abs/1812.11941>`_.
     Args:
@@ -52,7 +52,7 @@ class DenseDepthHeadTeacherMobile(DepthBaseDecodeHead):
                  loss_depth_grad=None,
                  extend_up_conv_num=0,
                  **kwargs):
-        super(DenseDepthHeadTeacherMobile, self).__init__(**kwargs)
+        super(DenseDepthHeadSwinMobile, self).__init__(**kwargs)
 
         self.up_sample_channels = up_sample_channels[::-1]
         self.in_channels = self.in_channels[::-1]

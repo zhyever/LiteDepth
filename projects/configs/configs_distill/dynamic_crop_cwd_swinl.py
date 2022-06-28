@@ -13,7 +13,7 @@ teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
         type='Pretrained', 
-        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup_new.pth'),
+        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup.pth'),
     backbone=dict(
         type='SwinTransformer',
         embed_dims=192,
@@ -36,7 +36,7 @@ teacher_model_cfg = dict(
         norm_cfg=backbone_norm_cfg,
         pretrain_style='official'), # the most small version
     decode_head=dict(
-        type='DenseDepthHeadMobile',
+        type='DenseDepthHeadSwinMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
@@ -60,12 +60,12 @@ student_model_cfg = dict(
         model_name="tf_mobilenetv3_small_minimal_100",
         features_only=True),
     decode_head=dict(
-        type='DenseDepthHeadMobile',
+        type='DenseDepthHeadBasicMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
         in_channels=[16, 16, 24, 48, 576],
-        up_sample_channels=[16, 24, 32, 64, 96],
+        up_sample_channels=[16, 24, 32, 64, 96], # 96->128, rm final3x3
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
@@ -81,7 +81,7 @@ model=dict(
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    distill_loss=dict(type='ChannelWiseDivergence', loss_weight=2, tau=4),
+    distill_loss=dict(type='ChannelWiseDivergence', loss_weight=0.5, tau=4),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
     img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),

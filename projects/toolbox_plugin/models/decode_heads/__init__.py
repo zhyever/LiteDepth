@@ -1,9 +1,9 @@
-from .densedepth_head import DenseDepthHeadMobile
 from .densedepth_light_head import DenseDepthHeadLightMobile
-from .densedepth_teacher_head import DenseDepthHeadTeacherMobile
+from .densedepth_basic_head import DenseDepthHeadBasicMobile
+from .densedepth_swin_head import DenseDepthHeadSwinMobile
 
 __all__ = [
-    'DenseDepthHeadMobile',
     'DenseDepthHeadLightMobile',
-    'DenseDepthHeadTeacherMobile'
+    'DenseDepthHeadBasicMobile',
+    'DenseDepthHeadSwinMobile'
 ]

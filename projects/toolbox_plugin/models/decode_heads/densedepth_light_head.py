@@ -20,36 +20,22 @@ class UpSample(nn.Sequential):
     '''Fusion module
 
     From Adabins
-    Compared the original version, this upsample layer remove the final 3x3 conv
+    Reduce to only one 3x3 conv
     
     '''
-    def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None, final_layer=False):
+    def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None):
         super(UpSample, self).__init__()
-        self.final_layer = final_layer
         self.convA = ConvModule(skip_input, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-        if self.final_layer is not True:
-            self.convB = ConvModule(output_features, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
         self.hack_act = build_activation_layer(act_cfg)
 
     def forward(self, x, concat_with, return_immediately=False):
         up_x = F.interpolate(x, size=[concat_with.size(2), concat_with.size(3)], mode='bilinear', align_corners=True)
-
-        if self.final_layer:
-            if return_immediately:
-                temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
-                out = self.hack_act(temp)
-                return out, temp
-            else:
-                return self.convA(torch.cat([up_x, concat_with], dim=1))
-        
+        if return_immediately:
+            temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
+            out = self.hack_act(temp)
+            return out, temp
         else:
-            if return_immediately:
-                temp = self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)), activate=False)
-                out = self.hack_act(temp)
-                return out, temp
-            else:
-                return self.convB(self.convA(torch.cat([up_x, concat_with], dim=1)))
-
+            return self.convA(torch.cat([up_x, concat_with], dim=1))
 
 @HEADS.register_module()
 class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
@@ -85,20 +71,12 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                         padding=0,
                         act_cfg=None
                     ))
-            elif index == len(self.in_channels) - 1:
-                self.conv_list.append(
-                    UpSample(skip_input=in_channel + up_channel_temp,
-                             output_features=up_channel,
-                             norm_cfg=self.norm_cfg,
-                             act_cfg=self.act_cfg,
-                             final_layer=True))
             else:
                 self.conv_list.append(
                     UpSample(skip_input=in_channel + up_channel_temp,
                              output_features=up_channel,
                              norm_cfg=self.norm_cfg,
-                             act_cfg=self.act_cfg,
-                             final_layer=False))
+                             act_cfg=self.act_cfg))
 
             # save earlier fusion target
             up_channel_temp = up_channel
