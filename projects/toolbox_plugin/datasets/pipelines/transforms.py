@@ -11,15 +11,21 @@ class RandomCropV2(object):
     """
     def __init__(self, crop_size, pick_mode=False):
         self.crop_size = crop_size
-        self.crop_size_h_min = crop_size[0][0]
-        self.crop_size_h_max = crop_size[1][0]
-        self.crop_size_w_min = crop_size[0][1]
-        self.crop_size_w_max = crop_size[1][1]
         self.pick_mode = pick_mode
+        
+        if self.pick_mode is not True:
+            self.crop_size_h_min = crop_size[0][0]
+            self.crop_size_h_max = crop_size[1][0]
+            self.crop_size_w_min = crop_size[0][1]
+            self.crop_size_w_max = crop_size[1][1]
+
 
     def random_select(self):
         if self.pick_mode:
-            select_index = random.randint(0, len(self.crop_size) - 1)
+            if len(self.crop_size) == 1:
+                select_index = 0
+            else:
+                select_index = random.randint(0, len(self.crop_size) - 1)
             return self.crop_size[select_index]
         
         else:

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
-bash ./tools/dist_train.sh projects/configs_aug/dynamic_crop_200e.py 2 --work-dir nfs/mobileAI2022/crop_strategy/dynamic_crop_200e
-bash ./tools/dist_train.sh projects/configs_aug/crop_384x512_200e.py 2 --work-dir nfs/mobileAI2022/crop_strategy/crop_384x512_200e
-bash ./tools/dist_train.sh projects/configs_aug/wocrop_200e.py 2 --work-dir nfs/mobileAI2022/crop_strategy/crop_384x512_200e
+bash ./tools/dist_train.sh projects/configs/configs_distill/dynamic_crop_cwd_swinl_align.py 2 --work-dir nfs/mobileAI2022/distill/dynamic_crop_cwd_4_swinl_align --options 'model.distill_loss.loss_weight=4'
+
+bash ./tools/dist_train.sh projects/configs/configs_distill/dynamic_crop_cwd_swinl_align.py 2 --work-dir nfs/mobileAI2022/distill/dynamic_crop_cwd_5_swinl_align --options 'model.distill_loss.loss_weight=5'
+
+bash ./tools/dist_train.sh projects/configs/configs_distill/dynamic_crop_cwd_swinl_align.py 2 --work-dir nfs/mobileAI2022/distill/dynamic_crop_cwd_6_swinl_align --options 'model.distill_loss.loss_weight=6'
 
 

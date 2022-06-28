@@ -1,15 +1,13 @@
 _base_ = [
-    '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
+    '../../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
 ]
 
 plugin=True
 plugin_dir='projects/toolbox_plugin/'
 
-custom_imports=dict(imports='mmcls.models', allow_failed_imports=False) 
-
 # model settings
-norm_cfg = dict(type='BN', requires_grad=True)
-model = dict(
+teacher_model_cfg = None
+student_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     backbone=dict(
         type="mmcls.TIMMBackbone",
@@ -22,7 +20,7 @@ model = dict(
         min_depth=1e-3,
         max_depth=40,
         in_channels=[16, 16, 24, 48, 576],
-        up_sample_channels=[16, 24, 32, 64, 128],
+        up_sample_channels=[16, 24, 32, 64, 96],
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
@@ -32,18 +30,32 @@ model = dict(
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
+model=dict(
+    type='DistillWrapper',
+    ema=True,
+    distill=False,
+    student_depther_cfg=student_model_cfg,
+    train_cfg=dict(),
+    test_cfg=dict(mode='whole'),
+    img_norm_cfg_student=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]),
+)
+
 # dataset settings Only for test
 dataset_type = 'MobileAI2022Dataset'
 data_root = 'data/'
+# img_norm_cfg = dict(
+#     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True) # teacher
+# img_norm_cfg = dict(
+#     mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5], to_rgb=True) # incpt stu
 img_norm_cfg = dict(
-    mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5], to_rgb=True) # incpt
-crop_size= (416, 544)
+    mean=[0., 0., 0.], std=[1., 1., 1.], to_rgb=True)
+# crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='DepthLoadAnnotations'),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
-    dict(type='RandomCropV2', pick_mode=True, crop_size=[(384, 512)]),
+    dict(type='RandomCropV2', pick_mode=True, crop_size=[(384, 512), (480, 640)]),
     dict(type='ColorAug', prob=1, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='DefaultFormatBundle'),
@@ -79,20 +91,20 @@ data = dict(
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000),
-    test=dict(
-        type=dataset_type,
-        pipeline=test_pipeline,
-        data_root='data/online_val',
-        test_mode=True,
-        min_depth=1e-3,
-        depth_scale=1000),
     # test=dict(
     #     type=dataset_type,
     #     pipeline=test_pipeline,
-    #     data_root='data/local_val',
-    #     test_mode=False,
+    #     data_root='data/online_val',
+    #     test_mode=True,
     #     min_depth=1e-3,
-    #     depth_scale=1000)
+    #     depth_scale=1000),
+    test=dict(
+        type=dataset_type,
+        pipeline=test_pipeline,
+        data_root='data/local_val',
+        test_mode=False,
+        min_depth=1e-3,
+        depth_scale=1000)
 )
 
 # optimizer
@@ -106,13 +118,18 @@ lr_config = dict(
     final_div_factor=100,
     by_epoch=False,
 )
-momentum_config = dict(
-    policy='OneCycle'
-)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+
 # runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
 evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
 
 find_unused_parameters=True
+
+custom_hooks = [
+    dict(type="CustomEMAHook", 
+         momentum=0.99, 
+         interval=1, 
+         warm_up=100,)
+]

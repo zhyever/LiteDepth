@@ -11,9 +11,10 @@ norm_cfg = dict(type='BN', requires_grad=True)
 
 teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
+    downsample_ratio=1,
     init_cfg=dict(
         type='Pretrained', 
-        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup.pth'),
+        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup_super_new.pth'),
     backbone=dict(
         type='SwinTransformer',
         embed_dims=192,
@@ -77,28 +78,12 @@ student_model_cfg = dict(
 
 model=dict(
     type='DistillWrapper',
+    super_resolution=True,
+    distill=True,
+    ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    teacher_select_de_index=(0, ),
-    student_select_de_index=(0, ),
-    distill_loss=dict(
-        type='StudentSegContrast',
-        downsample=4,
-        dim=16,
-        loss_weight=1,
-        pixel_weight=1,
-        region_weight=0,
-        pixel_memory_size=20000,
-        region_memory_size=2000,
-        pixel_contrast_size=2048,
-        region_contrast_size=512,
-        contrast_kd_temperature=1.0,
-        contrast_temperature=0.1,
-        ignore_label=40,
-        depth_max=40,
-        depth_min=1e-3,
-        mode='LID',
-        num_classes=40),
+    distill_loss=dict(type='KnowledgeDistillationKLDivLoss', loss_weight=1),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
     img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),

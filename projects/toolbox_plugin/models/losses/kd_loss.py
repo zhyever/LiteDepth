@@ -51,9 +51,9 @@ class KnowledgeDistillationKLDivLoss(nn.Module):
         self.T = T
 
     def forward(self,
-                pred,
-                soft_label,
-                weight=None,
+                preds_S,
+                preds_T,
+                depth_gt_resized,
                 avg_factor=None,
                 reduction_override=None):
         """Forward function.
@@ -68,17 +68,23 @@ class KnowledgeDistillationKLDivLoss(nn.Module):
                 override the original reduction method of the loss.
                 Defaults to None.
         """
-        assert reduction_override in (None, 'none', 'mean', 'sum')
+        
+        mask = depth_gt_resized.contiguous().view(-1) > 0
 
-        reduction = (
-            reduction_override if reduction_override else self.reduction)
+        s_feats = preds_S.permute(0, 2, 3, 1)
+        s_feats = s_feats.contiguous().view(-1, s_feats.shape[-1])
+        s_feats = s_feats[mask, :]
+
+        t_feats = preds_T.permute(0, 2, 3, 1)
+        t_feats = t_feats.contiguous().view(-1, t_feats.shape[-1])
+        t_feats = t_feats[mask, :]
 
         loss_kd = self.loss_weight * knowledge_distillation_kl_div_loss(
-            pred,
-            soft_label,
-            weight,
-            reduction=reduction,
-            avg_factor=avg_factor,
+            s_feats,
+            t_feats,
+            weight=None,
+            reduction=self.reduction,
+            avg_factor=None,
             T=self.T)
 
         return loss_kd

@@ -1,0 +1,129 @@
+_base_ = [
+    '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
+]
+
+plugin=True
+plugin_dir='projects/toolbox_plugin/'
+
+custom_imports=dict(imports='mmcls.models', allow_failed_imports=False) 
+
+# model settings
+norm_cfg = dict(type='BN', requires_grad=True)
+model = dict(
+    type='DepthEncoderDecoderMobile',
+    backbone=dict(
+        type="mmcls.TIMMBackbone",
+        pretrained=True,
+        model_name="tf_mobilenetv3_small_minimal_100",
+        features_only=True),
+    decode_head=dict(
+        type='DenseDepthHeadMobile',
+        scale_up=True,
+        min_depth=1e-3,
+        max_depth=10,
+        in_channels=[16, 16, 24, 48, 576],
+        up_sample_channels=[16, 24, 32, 64, 128],
+        channels=16, # last one
+        # align_corners=False, # for upsample
+        align_corners=True, # for upsample
+        loss_decode=dict(
+            type='SigLoss', valid_mask=True, loss_weight=1.0)),
+    # model training and testing settings
+    train_cfg=dict(),
+    test_cfg=dict(mode='whole'))
+
+# dataset settings Only for test
+dataset_type = 'NYUDataset'
+data_root = 'data/nyu/'
+img_norm_cfg = dict(
+    mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5], to_rgb=True) # incpt
+crop_size= (416, 544)
+train_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='DepthLoadAnnotations'),
+    dict(type='NYUCrop', depth=True),
+    dict(type='RandomRotate', prob=0.5, degree=2.5),
+    dict(type='RandomFlip', prob=0.5),
+    # dict(type='RandomCrop', crop_size=(416, 544)),
+    dict(type='RandomCropV2', pick_mode=True, crop_size=[(384, 512), (480, 640)]),
+    dict(type='ColorAug', prob=0.5, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', 
+         keys=['img', 'depth_gt'], 
+         meta_keys=('filename', 'ori_filename', 'ori_shape',
+                    'img_shape', 'pad_shape', 'scale_factor', 
+                    'flip', 'flip_direction', 'img_norm_cfg',
+                    'cam_intrinsic')),
+]
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='MultiScaleFlipAug',
+        img_scale=(480, 640),
+        flip=True,
+        flip_direction='horizontal',
+        transforms=[
+            dict(type='RandomFlip', direction='horizontal'),
+            dict(type='Normalize', **img_norm_cfg),
+            dict(type='ImageToTensor', keys=['img']),
+            dict(type='Collect', 
+                 keys=['img'],
+                 meta_keys=('filename', 'ori_filename', 'ori_shape',
+                            'img_shape', 'pad_shape', 'scale_factor', 
+                            'flip', 'flip_direction', 'img_norm_cfg',
+                            'cam_intrinsic')),
+        ])
+]
+data = dict(
+    samples_per_gpu=16,
+    workers_per_gpu=8,
+    train=dict(
+        type=dataset_type,
+        data_root=data_root,
+        depth_scale=1000,
+        split='nyu_train.txt',
+        pipeline=train_pipeline,
+        garg_crop=False,
+        eigen_crop=True,
+        min_depth=1e-3,
+        max_depth=10),
+    val=dict(
+        type=dataset_type,
+        data_root=data_root,
+        depth_scale=1000,
+        split='nyu_test.txt',
+        pipeline=test_pipeline,
+        garg_crop=False,
+        eigen_crop=True,
+        min_depth=1e-3,
+        max_depth=10),
+    test=dict(
+        type=dataset_type,
+        data_root=data_root,
+        depth_scale=1000,
+        split='nyu_test.txt',
+        pipeline=test_pipeline,
+        garg_crop=False,
+        eigen_crop=True,
+        min_depth=1e-3,
+        max_depth=10))
+
+# optimizer
+max_lr=3e-4
+optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
+# learning policy
+lr_config = dict(
+    policy='OneCycle',
+    max_lr=max_lr,
+    div_factor=25,
+    final_div_factor=100,
+    by_epoch=False,
+)
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+# runtime settings
+runner = dict(type='EpochBasedRunner', max_epochs=48)
+checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=12)
+evaluation = dict(by_epoch=True, interval=12, pre_eval=True)
+
+find_unused_parameters=True
