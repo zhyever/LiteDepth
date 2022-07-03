@@ -143,14 +143,14 @@ def tf_test_model(image, args, model, filename):
 
     print("Error of converted model: {}".format(np.mean(torch_result - tf_result)))
 
-    # plt.subplot(1, 3, 1)
-    # img = plt.imread(filename)
-    # plt.imshow(img)
-    # plt.subplot(1, 3, 2)
-    # plt.imshow(torch_result[0, 0, :, :])
-    # plt.subplot(1, 3, 3)
-    # plt.imshow(tf_result[0, 0, :, :])
-    # plt.savefig(args.test_output_path)
+    plt.subplot(1, 3, 1)
+    img = plt.imread(filename)
+    plt.imshow(img)
+    plt.subplot(1, 3, 2)
+    plt.imshow(torch_result[0, 0, :, :])
+    plt.subplot(1, 3, 3)
+    plt.imshow(tf_result[0, 0, :, :])
+    plt.savefig(args.test_output_path)
     
 
 def main():
@@ -212,6 +212,19 @@ def main():
         break
 
     checkpoint = load_checkpoint(model, args.load_from, map_location='cpu')
+    
+    if cfg.model.type == 'DepthEncoderDecoderMobileMergeTF':
+        print("Merge image normalization into the first conv layer")
+        model.merge_image_normalization()
+
+    # we need to merge the image normalization into the model forward process
+    # model_std_output = model.backbone.timm_model.conv_stem(image)
+    # mean = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    # std = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    # image_reverse_norm = image * std + mean
+    # model.hack_norm()
+    # model_conv_norm_output = model.backbone.timm_model.conv_stem(image_reverse_norm)
+    # print("Merge error:".format(torch.mean(model_conv_norm_output - model_std_output)))
 
     if args.convert:
         convert_model(model, args)

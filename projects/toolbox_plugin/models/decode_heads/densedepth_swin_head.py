@@ -51,6 +51,7 @@ class DenseDepthHeadSwinMobile(DepthBaseDecodeHead):
                  with_depth_grad=False,
                  loss_depth_grad=None,
                  extend_up_conv_num=0,
+                 upsample_type='nearest',
                  **kwargs):
         super(DenseDepthHeadSwinMobile, self).__init__(**kwargs)
 
@@ -102,15 +103,17 @@ class DenseDepthHeadSwinMobile(DepthBaseDecodeHead):
             )
         self.hack_act = build_activation_layer(self.act_cfg)
 
+        self.upsample_type = upsample_type
+
     # default init_weights for conv(msra) and norm in ConvModule
-    def init_weights(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
+    # def init_weights(self):
+    #     for p in self.parameters():
+    #         if p.dim() > 1:
+    #             nn.init.xavier_uniform_(p)
                 
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                xavier_init(m, distribution='uniform')
+    #     for m in self.modules():
+    #         if isinstance(m, nn.Conv2d):
+    #             xavier_init(m, distribution='uniform')
 
     def forward_train(self, 
                       img, 
@@ -211,11 +214,21 @@ class DenseDepthHeadSwinMobile(DepthBaseDecodeHead):
         resized_output = {}
 
         for k,v in model_outputs.items():
-            resized_v = resize(
-                input=v,
-                size=depth_gt.shape[2:],
-                mode='nearest',
-                align_corners=None)
+
+            if self.upsample_type == 'nearest':
+                resized_v = resize(
+                    input=v,
+                    size=depth_gt.shape[2:],
+                    mode='nearest',
+                    align_corners=None)
+            elif self.upsample_type == 'bilinear':
+                resized_v = resize(
+                    input=v,
+                    size=depth_gt.shape[2:],
+                    mode='bilinear',
+                    align_corners=True,
+                    warning=False)
+                    
             resized_output[k] = resized_v
         
         loss['loss_depth'] = self.loss_decode(resized_output['depth_pred'], depth_gt)

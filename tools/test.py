@@ -157,6 +157,10 @@ def main():
     # for other models
     checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
 
+    if cfg.model.type == 'DepthEncoderDecoderMobileMerge':
+        print("Merge image normalization into the first conv layer")
+        model.merge_image_normalization()
+
     # clean gpu memory when starting a new evaluation.
     torch.cuda.empty_cache()
     eval_kwargs = {} if args.eval_options is None else args.eval_options

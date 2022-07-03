@@ -22,10 +22,12 @@ class DistillWrapper(BaseDepther):
                  student_select_de_index=(0, ),
                  distill_loss=None,
                  super_resolution=False,
+                 upsample_type='nearest',
                  layer_weights=(1, ),
                  img_norm_cfg_teacher=None,
                  img_norm_cfg_student=None,
-                 val_model='student'):
+                 val_model='student',
+                 pretrained=None):
         super(DistillWrapper, self).__init__(init_cfg)
 
         self.distill = distill
@@ -47,6 +49,7 @@ class DistillWrapper(BaseDepther):
                 self.distill_loss = build_loss(distill_loss)
             self.img_norm_cfg_teacher = img_norm_cfg_teacher
             self.super_resolution = super_resolution # for teacher
+            self.upsample_type = upsample_type
         
 
         self.train_cfg = train_cfg
@@ -151,33 +154,30 @@ class DistillWrapper(BaseDepther):
             teacher_decoder_feats_act, teacher_encoder_feats, teacher_decoder_feats, teacher_losses, \
                 student_decoder_feats_act, student_encoder_feats, student_decoder_feats, student_losses = self.extract_feat(imgs, img_metas, depth_gt, **kwargs)
 
+            student_losses['decode.loss_depth'] = student_losses.pop('loss_depth')
+
             for idx, (idx_t, idx_s, w) in enumerate(zip(self.teacher_select_de_index, self.student_select_de_index, self.layer_weights)):
                 teacher_last_layer_feat = teacher_decoder_feats[-(idx_t + 1)]
                 student_last_layer_feat = student_decoder_feats[-(idx_s + 1)]
 
-                # student_last_layer_feat = resize(
-                #     input=student_last_layer_feat,
-                #     size=teacher_last_layer_feat.shape[2:],
-                #     mode='bilinear',
-                #     align_corners=True,
-                #     warning=False
-                # )
-
-                student_last_layer_feat = resize(
-                    input=student_last_layer_feat,
-                    size=teacher_last_layer_feat.shape[2:],
-                    mode='nearest',
-                    align_corners=None,
-                    warning=False
-                )
-
-                # depth_gt_resized = resize(
-                #     input=depth_gt,
-                #     size=teacher_last_layer_feat.shape[2:],
-                #     mode='bilinear',
-                #     align_corners=True,
-                #     warning=False
-                # )
+                if self.upsample_type == 'bilinear':
+                    student_last_layer_feat = resize(
+                        input=student_last_layer_feat,
+                        size=teacher_last_layer_feat.shape[2:],
+                        mode='bilinear',
+                        align_corners=True,
+                        warning=False
+                    )
+                elif self.upsample_type == 'nearest':
+                    student_last_layer_feat = resize(
+                        input=student_last_layer_feat,
+                        size=teacher_last_layer_feat.shape[2:],
+                        mode='nearest',
+                        align_corners=None,
+                        warning=False
+                    )
+                else:
+                    raise NotImplementedError
 
                 depth_gt_resized = resize(
                     input=depth_gt,
@@ -192,13 +192,13 @@ class DistillWrapper(BaseDepther):
                     distill_loss={}
                     for i in range(len(self.distill_loss)):
                         loss_temp = self.distill_loss[i](student_last_layer_feat, teacher_last_layer_feat, depth_gt_resized)
-                        distill_loss['distill_loss_{}_{}'.format(self.distill_loss_cfg[i].type, idx_t)] = loss_temp * self.train_cfg.distill_loss_weight[i]
+                        distill_loss['loss_distill_{}_{}'.format(self.distill_loss_cfg[i].type, idx_t)] = loss_temp * self.train_cfg.distill_loss_weight[i]
                 else:
                     distill_loss = self.distill_loss(student_last_layer_feat, teacher_last_layer_feat, depth_gt_resized)
-                    distill_loss = {'distill_loss_{}'.format(idx_t): distill_loss * w}
+                    distill_loss = {'loss_distill_{}_{}'.format(self.distill_loss_cfg.type, idx_t): distill_loss * w}
                 student_losses.update(**distill_loss)
                 
-            student_losses['depth_loss_teacher'] = teacher_losses['loss_depth']
+            student_losses['depth_info_teacher'] = teacher_losses['loss_depth']
 
         else:
             student_decoder_feats_act, student_encoder_feats, student_decoder_feats, student_losses = self.extract_feat(imgs, img_metas, depth_gt, **kwargs)

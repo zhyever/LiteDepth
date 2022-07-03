@@ -47,9 +47,13 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
 
     def __init__(self,
                  up_sample_channels,
-                 with_depth_grad=False,
+                 debug=False,
+                 with_loss_depth_grad=False,
                  loss_depth_grad=None,
+                 with_loss_ssim=False,
+                 loss_ssim=None,
                  extend_up_conv_num=0,
+                 upsample_type='nearest',
                  **kwargs):
         super(DenseDepthHeadLightMobile, self).__init__(**kwargs)
 
@@ -81,9 +85,13 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
             # save earlier fusion target
             up_channel_temp = up_channel
         
-        self.with_depth_grad = with_depth_grad
-        if self.with_depth_grad:
+        self.with_loss_depth_grad = with_loss_depth_grad
+        if self.with_loss_depth_grad:
             self.loss_depth_grad = build_loss(loss_depth_grad)
+        
+        self.with_loss_ssim = with_loss_ssim
+        if self.with_loss_ssim:
+            self.loss_ssim = build_loss(loss_ssim)
 
         self.extend_convs = nn.ModuleList()
         self.extend_up_conv_num = extend_up_conv_num
@@ -100,6 +108,9 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                 )
             )
         self.hack_act = build_activation_layer(self.act_cfg)
+
+        self.upsample_type = upsample_type
+        self.debug = debug
 
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
@@ -194,6 +205,10 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
 
         losses = self.losses(outputs, depth_gt)
 
+        if self.debug:
+            log_imgs = self.log_images(img[0], depth_pred[0], depth_gt[0], img_metas[0])
+            losses.update(**log_imgs)
+
         if return_immediately:
             return temp_feat_list, temp_feat_before_act_list, outputs, losses
         
@@ -209,31 +224,50 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
 
         resized_output = {}
 
-        for k,v in model_outputs.items():
-            resized_v = resize(
-                input=v,
+
+        depth_pred = model_outputs['depth_pred']
+        
+        if self.upsample_type == 'nearest':
+            depth_pred_upsample = resize(
+                input=depth_pred,
                 size=depth_gt.shape[2:],
                 mode='nearest',
                 align_corners=None)
-            resized_output[k] = resized_v
+
+        elif self.upsample_type == 'bilinear':
+            depth_pred_upsample = resize(
+                input=depth_pred,
+                size=depth_gt.shape[2:],
+                mode='bilinear',
+                align_corners=True,
+                warning=False)
+            
+        depth_gt_downsample = resize(
+            input=depth_gt,
+            size=depth_pred.shape[2:],
+            mode='bilinear',
+            align_corners=True,
+            warning=False)
+
         
-        loss['loss_depth'] = self.loss_decode(resized_output['depth_pred'], depth_gt)
+        loss['loss_depth'] = self.loss_decode(depth_pred_upsample, depth_gt)
 
-        if self.with_depth_grad:
+        if self.with_loss_depth_grad:
             # generate depth grad
-            valid_mask = depth_gt > 0
-            valid_mask_x = valid_mask[:, :, :, :-1]
-            valid_mask_y = valid_mask[:, :, :-1, :]
 
-            x_grad_pred = resized_output['depth_pred'][:, :, :, 1:] - resized_output['depth_pred'][:, :, :, :-1]
-            y_grad_pred = resized_output['depth_pred'][:, :, 1:, :] - resized_output['depth_pred'][:, :, :-1, :]
-            x_grad_gt = depth_gt[:, :, :, 1:] - depth_gt[:, :, :, :-1]
-            y_grad_gt = depth_gt[:, :, 1:, :] - depth_gt[:, :, :-1, :]
+            if self.debug:
+                depth_grad, gt_x_grad, gt_y_grad, pred_x_grad, pred_y_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample, debug=True)
+                loss["img_gt_x_grad"] = gt_x_grad[0]
+                loss["img_gt_y_grad"] = gt_y_grad[0]
+                loss["img_pred_x_grad"] = pred_x_grad[0]
+                loss["img_pred_y_grad"] = pred_y_grad[0]
+                loss['loss_depth_grad'] = depth_grad
+            else:
+                depth_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample)
+                loss['loss_depth_grad'] = depth_grad
 
-            depth_grad = self.loss_depth_grad(x_grad_pred[valid_mask_x], x_grad_gt[valid_mask_x]) +\
-                self.loss_depth_grad(y_grad_pred[valid_mask_y], y_grad_gt[valid_mask_y])
-
-            loss['loss_depth_grad'] = depth_grad
+        if self.with_loss_ssim:
+            loss['loss_depth_ssim'] = self.loss_ssim(depth_pred_upsample, depth_gt)
 
         return loss
 

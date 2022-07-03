@@ -12,8 +12,8 @@ norm_cfg = dict(type='BN', requires_grad=True)
 teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
-        type='Pretrained', 
-        checkpoint='nfs/checkpoints/swinl_w7_22k_align_decoder_extendup.pth'),
+        type='Pretrained',
+        checkpoint='nfs/checkpoints/_swinl_w7_22k_align_decoder_extendup_bilinear_cropv2.pth'),
     backbone=dict(
         type='SwinTransformer',
         embed_dims=192,
@@ -28,27 +28,25 @@ teacher_model_cfg = dict(
         qkv_bias=True,
         qk_scale=None,
         patch_norm=True,
-        drop_rate=0.,
-        attn_drop_rate=0.,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
         drop_path_rate=0.3,
         use_abs_pos_embed=False,
         act_cfg=dict(type='GELU'),
-        norm_cfg=backbone_norm_cfg,
-        pretrain_style='official'), # the most small version
+        norm_cfg=dict(type='LN', requires_grad=True),
+        pretrain_style='official'),
     decode_head=dict(
         type='DenseDepthHeadSwinMobile',
+        upsample_type='bilinear',
         scale_up=True,
-        min_depth=1e-3,
+        min_depth=0.001,
         max_depth=40,
         in_channels=[192, 384, 768, 1536],
         up_sample_channels=[24, 32, 64, 96],
-        channels=16, # last one
+        channels=16,
         extend_up_conv_num=1,
-        # align_corners=False, # for upsample
-        align_corners=True, # for upsample
-        loss_decode=dict(
-            type='SigLoss', valid_mask=True, loss_weight=1.0)),
-    # model training and testing settings
+        align_corners=True,
+        loss_decode=dict(type='SigLoss', valid_mask=True, loss_weight=1.0)),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
@@ -60,12 +58,12 @@ student_model_cfg = dict(
         model_name="tf_mobilenetv3_small_minimal_100",
         features_only=True),
     decode_head=dict(
-        type='DenseDepthHeadBasicMobile',
+        type='DenseDepthHeadLightMobile',
         scale_up=True,
         min_depth=1e-3,
         max_depth=40,
         in_channels=[16, 16, 24, 48, 576],
-        up_sample_channels=[16, 24, 32, 64, 96], # 96->128, rm final3x3
+        up_sample_channels=[16, 24, 32, 64, 96], # 96->128, single 3x3 each layer
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
@@ -77,6 +75,7 @@ student_model_cfg = dict(
 
 model=dict(
     type='DistillWrapper',
+    # val_model='teacher',
     distill=True,
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,

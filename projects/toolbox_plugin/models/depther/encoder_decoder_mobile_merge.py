@@ -1,14 +1,16 @@
-import torch
-from depth.models.builder import DEPTHER
-from depth.ops import resize
-from .encoder_decoder_mobile import DepthEncoderDecoderMobile
 import copy
+import torch
 import torch.nn as nn
 
+from depth.models.depther import DepthEncoderDecoder
+from depth.models.builder import DEPTHER
+from depth.ops import resize
 
 import torch.nn.functional as F
 from timm.models.layers import pad_same
 
+from mmcv.utils import print_log
+from depth.utils import get_root_logger
 
 def conv2d_same(x, weight, bias=None, stride=(1, 1), padding=(0, 0), dilation=(1, 1), groups=1, padding_value=0):
     x = pad_same(x, weight.shape[-2:], stride, dilation, padding_value)
@@ -29,68 +31,35 @@ class Conv2dSame(nn.Conv2d):
 
 
 @DEPTHER.register_module()
-class DepthEncoderDecoderMobileTF(DepthEncoderDecoderMobile):
+class DepthEncoderDecoderMobileMerge(DepthEncoderDecoder):
     r'''
-    used convert pytorch model to the tflite
+    used in mobileAI challenge
     '''
 
     def __init__(self,
                  downsample_ratio=4,
                  img_norm_cfg=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]),
                  **kwarg):
-        super(DepthEncoderDecoderMobile, self).__init__(**kwarg)
+        super(DepthEncoderDecoderMobileMerge, self).__init__(**kwarg)
+
         self.downsample_ratio = downsample_ratio
-
         self.img_norm_cfg = img_norm_cfg
-        assert self.img_norm_cfg["mean"] == self.img_norm_cfg["std"], "only support mean=std now"
-        self.img_norm_mean = torch.tensor(self.img_norm_cfg["mean"]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-        self.img_norm_std = torch.tensor(self.img_norm_cfg["std"]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-
-        self.decode_head.max_depth = self.decode_head.max_depth * 1000 # scale up 1000 for max_depth in sigmoid
-
-    def forward(self, input):
-        
-        # norm the input image
-        input = (input - self.img_norm_mean.expand(input.shape)) / self.img_norm_std.expand(input.shape)
-
-        out = self.extract_feat(input)
-        out = self.decode_head.forward(out, None)
-
-        out = resize(
-            input=out,
-            size=(480, 640),
-            mode='nearest',
-            align_corners=None)
-        
-        return out
-
-@DEPTHER.register_module()
-class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
-    r'''
-    used convert pytorch model to the tflite
-    '''
-
-    def __init__(self,
-                 downsample_ratio=4,
-                 img_norm_cfg=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]), # merge image norm
-                 **kwarg):
-        super(DepthEncoderDecoderMobileMergeTF, self).__init__(**kwarg)
-
-        self.img_norm_cfg = img_norm_cfg
-        assert self.img_norm_cfg["mean"] == self.img_norm_cfg["std"], "only support mean = std now"
+        assert self.img_norm_cfg["mean"] == self.img_norm_cfg["std"], "only support mean==std now"
         self.img_norm_mean = torch.tensor(self.img_norm_cfg["mean"])
         self.img_norm_std = torch.tensor(self.img_norm_cfg["std"])
 
-        self.downsample_ratio = downsample_ratio
-        self.decode_head.max_depth = self.decode_head.max_depth * 1000 # scale up 1000 for max_depth in sigmoid
-
+    def init_weights(self):
+        super(DepthEncoderDecoderMobileMerge, self).init_weights()
+        print_log(f'Start to merge image normalization into the first pre-trained Conv layer', logger=get_root_logger())
+        self.merge_image_normalization()
+        print_log(f'Successfully merge image normalization into the first pre-trained Conv layer', logger=get_root_logger())
 
     def merge_image_normalization(self):
         
         template = copy.deepcopy(self.backbone.timm_model.conv_stem)
 
-        # ensure the same input padding (only work when img_norm.mean = img_norm.std)
         padding_value = 0 * self.img_norm_std[0] + self.img_norm_mean[0]
+
         first_conv = Conv2dSame(
             padding_value, 
             template.in_channels, 
@@ -101,6 +70,8 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
             dilation=template.dilation, 
             groups=template.groups, 
             bias=template.bias)
+
+        # first_conv = copy.deepcopy(self.backbone.timm_model.conv_stem)
 
         # update weight
         first_conv_weight = self.backbone.timm_model.conv_stem._parameters['weight']
@@ -117,23 +88,37 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
             bias_list.append(bias)
         bias_tensor = torch.stack(bias_list)
 
-        # reload
         first_conv.weight = nn.Parameter(first_conv_weight_new)
         first_conv.bias = nn.Parameter(bias_tensor)
 
-        # replace
         self.backbone.timm_model.conv_stem = first_conv
 
-
-    def forward(self, input):
+    def encode_decode(self, img, img_metas, rescale=True):
+        """Encode images with backbone and decode into a depth estimation
+        map of the same size as input."""
         
-        out = self.extract_feat(input)
-        out = self.decode_head.forward(out, None)
-
-        out = resize(
-            input=out,
-            size=(480, 640),
-            mode='nearest',
-            align_corners=None)
-        
+        x = self.extract_feat(img)
+        out = self._decode_head_forward_test(x, img_metas)
+        # crop the pred depth to the certain range.
+        out = torch.clamp(out, min=self.decode_head.min_depth, max=self.decode_head.max_depth)
+        if rescale:
+            out = resize(
+                input=out,
+                size=img.shape[2:],
+                mode='nearest')
         return out
+
+    def extract_feat(self, img):
+        """Extract features from images."""
+
+        # x4 downsample the input image for speed up
+        img = resize(input=img, 
+                     size=(img.shape[-2] // self.downsample_ratio, img.shape[-1] // self.downsample_ratio), 
+                     mode='bilinear', 
+                     align_corners=True)
+
+        x = self.backbone(img)
+        if self.with_neck:
+            x = self.neck(x)
+    
+        return x

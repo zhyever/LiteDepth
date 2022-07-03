@@ -1,3 +1,4 @@
+# This config file is used to convert model from pytorch to tflite only.
 _base_ = [
     '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
 ]
@@ -10,7 +11,8 @@ custom_imports=dict(imports='mmcls.models', allow_failed_imports=False)
 # model settings
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
-    type='DepthEncoderDecoderMobile',
+    type='DepthEncoderDecoderMobileMerge',
+    img_norm_cfg=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]), # merge image norm
     backbone=dict(
         type="mmcls.TIMMBackbone",
         pretrained=True,
@@ -36,7 +38,7 @@ model = dict(
 dataset_type = 'MobileAI2022Dataset'
 data_root = 'data/'
 img_norm_cfg = dict(
-    mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5], to_rgb=True) # incpt
+    mean=[0.0, 0.0, 0.0], std=[1.0, 1.0, 1.0], to_rgb=True) # only to rgb
 # crop_size= (416, 544)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
@@ -79,33 +81,35 @@ data = dict(
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000),
-    test=dict(
-        type=dataset_type,
-        pipeline=test_pipeline,
-        data_root='data/online_val',
-        test_mode=True,
-        min_depth=1e-3,
-        depth_scale=1000),
     # test=dict(
     #     type=dataset_type,
     #     pipeline=test_pipeline,
-    #     data_root='data/local_val',
-    #     test_mode=False,
+    #     data_root='data/online_val',
+    #     test_mode=True,
     #     min_depth=1e-3,
-    #     depth_scale=1000)
+    #     depth_scale=1000),
+    test=dict(
+        type=dataset_type,
+        pipeline=test_pipeline,
+        data_root='data/local_val',
+        test_mode=False,
+        min_depth=1e-3,
+        depth_scale=1000)
 )
 
 # optimizer
 max_lr=3e-4
 optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
 # learning policy
-lr_config = dict(
-    policy='OneCycle',
-    max_lr=max_lr,
-    div_factor=25,
-    final_div_factor=100,
-    by_epoch=False,
-)
+# lr_config = dict(
+#     policy='OneCycle',
+#     max_lr=max_lr,
+#     div_factor=25,
+#     final_div_factor=100,
+#     by_epoch=False,
+# )
+# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=200)
