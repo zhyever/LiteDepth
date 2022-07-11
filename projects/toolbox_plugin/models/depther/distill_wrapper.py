@@ -50,6 +50,14 @@ class DistillWrapper(BaseDepther):
             self.img_norm_cfg_teacher = img_norm_cfg_teacher
             self.super_resolution = super_resolution # for teacher
             self.upsample_type = upsample_type
+
+            if self.upsample_type == 'learned':
+                self.projection_layer = nn.Sequential(
+                    nn.PixelShuffle(2),
+                    nn.Conv2d(student_depther_cfg.decode_head.channels//4, student_depther_cfg.decode_head.channels, 3, stride=1, padding=1),
+                    nn.PixelShuffle(2),
+                    nn.Conv2d(student_depther_cfg.decode_head.channels//4, student_depther_cfg.decode_head.channels, 3, stride=1, padding=1),
+                )
         
 
         self.train_cfg = train_cfg
@@ -168,6 +176,13 @@ class DistillWrapper(BaseDepther):
                         align_corners=True,
                         warning=False
                     )
+                    # teacher_last_layer_feat = resize(
+                    #     input=teacher_last_layer_feat,
+                    #     size=student_last_layer_feat.shape[2:],
+                    #     mode='bilinear',
+                    #     align_corners=True,
+                    #     warning=False
+                    # )
                 elif self.upsample_type == 'nearest':
                     student_last_layer_feat = resize(
                         input=student_last_layer_feat,
@@ -176,6 +191,16 @@ class DistillWrapper(BaseDepther):
                         align_corners=None,
                         warning=False
                     )
+                    # teacher_last_layer_feat = resize(
+                    #     input=teacher_last_layer_feat,
+                    #     size=student_last_layer_feat.shape[2:],
+                    #     mode='nearest',
+                    #     align_corners=None,
+                    #     warning=False
+                    # )
+                elif self.upsample_type == 'learned':
+                    student_last_layer_feat = self.projection_layer(student_last_layer_feat)
+                    # raise NotImplementedError
                 else:
                     raise NotImplementedError
 
@@ -186,8 +211,14 @@ class DistillWrapper(BaseDepther):
                     align_corners=None,
                     warning=False
                 )
+                # depth_gt_resized = resize(
+                #     input=depth_gt,
+                #     size=student_last_layer_feat.shape[2:],
+                #     mode='nearest',
+                #     align_corners=None,
+                #     warning=False
+                # )
                 
-
                 if isinstance(self.distill_loss, list):
                     distill_loss={}
                     for i in range(len(self.distill_loss)):

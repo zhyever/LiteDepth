@@ -12,7 +12,7 @@ class SimilarityMSELoss(nn.Module):
         loss_weight (float, optional): The weight of the loss. Defaults to 1.0
     """
 
-    def __init__(self, loss_weight=1.0, patch_w=4, patch_h=4):
+    def __init__(self, loss_weight=1.0, patch_w=1, patch_h=1):
         super().__init__()
         self.loss_weight = loss_weight
 
@@ -40,7 +40,7 @@ class SimilarityMSELoss(nn.Module):
 
         depth_gt_resized = resize(
             input=depth_gt_resized,
-            size=[depth_gt_resized.shape[-2] // self.patch_h, depth_gt_resized.shape[-1] // self.patch_w],
+            size=[feat_s.shape[-2], feat_s.shape[-1]],
             mode='nearest',
             align_corners=None,
             warning=False)

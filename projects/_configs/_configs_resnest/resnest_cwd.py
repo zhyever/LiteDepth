@@ -13,40 +13,26 @@ teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
         type='Pretrained',
-        checkpoint='nfs/checkpoints/_swinl_w7_22k_align_decoder_extendup_bilinear_cropv1.pth'),
+        checkpoint='nfs/checkpoints/teacher_models/resnest.pth'),
     backbone=dict(
-        type='SwinTransformer',
-        embed_dims=192,
-        depths=[2, 2, 18, 2],
-        num_heads=[6, 12, 24, 48],
-        window_size=7,
-        pretrain_img_size=224,
-        patch_size=4,
-        mlp_ratio=4,
-        strides=(4, 2, 2, 2),
-        out_indices=(0, 1, 2, 3),
-        qkv_bias=True,
-        qk_scale=None,
-        patch_norm=True,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.3,
-        use_abs_pos_embed=False,
-        act_cfg=dict(type='GELU'),
-        norm_cfg=dict(type='LN', requires_grad=True),
-        pretrain_style='official'),
+        type="mmcls.TIMMBackbone",
+        pretrained=True,
+        model_name="resnest101e",
+        features_only=True),
     decode_head=dict(
-        type='DenseDepthHeadSwinMobile',
+        type='DenseDepthHeadLightMobile',
         upsample_type='bilinear',
         scale_up=True,
-        min_depth=0.001,
+        min_depth=1e-3,
         max_depth=40,
-        in_channels=[192, 384, 768, 1536],
-        up_sample_channels=[24, 32, 64, 96],
-        channels=16,
-        extend_up_conv_num=1,
-        align_corners=True,
-        loss_decode=dict(type='SigLoss', valid_mask=True, loss_weight=1.0)),
+        in_channels=[128, 256, 512, 1024, 2048],
+        up_sample_channels=[16, 24, 32, 64, 96],
+        channels=16, # last one
+        # align_corners=False, # for upsample
+        align_corners=True, # for upsample
+        loss_decode=dict(
+            type='SigLoss', valid_mask=True, loss_weight=1.0)),
+    # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
@@ -67,20 +53,27 @@ student_model_cfg = dict(
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
+        with_loss_depth_grad=True,
+        loss_depth_grad=dict(
+            type='GradDepthLoss', valid_mask=True, loss_weight=0.5),
         loss_decode=dict(
             type='SigLoss', valid_mask=True, loss_weight=1.0)),
     # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
+distill_weight=0.5
 model=dict(
     type='DistillWrapper',
     # val_model='teacher',
+    teacher_select_de_index=(0,),
+    student_select_de_index=(0,),
+    layer_weights=(1,),
     distill=True,
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    distill_loss=dict(type='MSELoss', loss_weight=0.1),
+    distill_loss=dict(type='ChannelWiseDivergence', loss_weight=distill_weight, tau=4),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
     img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),
@@ -172,6 +165,14 @@ optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
-evaluation = dict(by_epoch=True, interval=50, pre_eval=True)
+evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
 
-find_unused_parameters=True
+# find_unused_parameters=True
+
+custom_hooks = [
+    dict(type="DistillReweightHook",
+         max_weight=distill_weight,
+         momentum=1,
+         interval=1, 
+         warm_up=100,)
+]

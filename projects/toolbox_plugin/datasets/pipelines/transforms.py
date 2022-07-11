@@ -1,13 +1,16 @@
 import numpy as np
 from depth.datasets.builder import PIPELINES
 import random
+import mmcv
 
 @PIPELINES.register_module()
 class RandomCropV2(object):
     """Random crop the image & depth.
 
     Args:
-        crop_size (tuple): Expected size after cropping, [(h, w)].
+        crop_size (tuple): Expected size after cropping [(h, w)], when pick_model = False.
+            Candidate size [(h1, w1), (h2, w2), ...., so on], when pick_model = False.
+        pick_mode (bool): If apply select_mode
     """
     def __init__(self, crop_size, pick_mode=False):
         self.crop_size = crop_size
@@ -81,3 +84,55 @@ class RandomCropV2(object):
 
     def __repr__(self):
         return self.__class__.__name__ + f'(crop_size={self.crop_size})'
+
+
+@PIPELINES.register_module()
+class ResizeImg(object):
+    """Resize images.
+
+        # Apply to RandomCropV2, select_mode = True
+        # (480, 640) -> (128, 160) ratio: 3.75, 4; factor: 32x4, 32x5 (max value)
+        # (360, 512) -> (96, 128) ratio: 3.75, 4; factor: 32x3, 32x4
+        # (240, 384) -> (64, 96) ratio: 3.75, 4; factor: 32x2, 32x3
+        # (120, 256) -> (32, 64) ratio: 3.75, 4; factor: 32x1, 32x2
+
+    """
+    def __init__(self,
+                 img_scale_ori=(480, 640),
+                 img_scale_target=(128, 160)):
+
+        self.scale_factor_h = img_scale_target[0] / img_scale_ori[0]
+        self.scale_factor_w = img_scale_target[1] / img_scale_ori[1]
+
+    def _resize_img(self, results):
+        """Resize images with ``results['scale']``."""
+        img, w_scale, h_scale = mmcv.imresize(results['img'],
+                                              (int(results['img'].shape[1] * self.scale_factor_w), 
+                                              int(results['img'].shape[0] * self.scale_factor_h)),
+                                              return_scale=True)
+        
+        scale_factor = np.array([w_scale, h_scale, w_scale, h_scale], dtype=np.float32)
+        results['img'] = img
+        results['img_shape'] = img.shape
+        results['pad_shape'] = img.shape  # in case that there is no padding
+        results['scale_factor'] = scale_factor
+
+    def __call__(self, results):
+        """Call function to resize images, bounding boxes, masks, depth estimation map.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Resized results, 'img_shape', 'pad_shape', 'scale_factor',
+                'keep_ratio' keys are added into result dict.
+        """
+
+        self._resize_img(results)
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += (f'(scale_factor_h={self.scale_factor_h}, '
+                     f'scale_factor_w={self.scale_factor_w})')
+        return repr_str

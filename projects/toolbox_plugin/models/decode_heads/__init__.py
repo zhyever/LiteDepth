@@ -5,5 +5,5 @@ from .densedepth_swin_head import DenseDepthHeadSwinMobile
 __all__ = [
     'DenseDepthHeadLightMobile',
     'DenseDepthHeadBasicMobile',
-    'DenseDepthHeadSwinMobile'
+    'DenseDepthHeadSwinMobile',
 ]

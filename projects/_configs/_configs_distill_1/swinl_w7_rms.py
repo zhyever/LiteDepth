@@ -11,9 +11,10 @@ norm_cfg = dict(type='BN', requires_grad=True)
 
 teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
+    # downsample_ratio=1,
     init_cfg=dict(
         type='Pretrained',
-        checkpoint='nfs/checkpoints/_swinl_w7_22k_align_decoder_extendup_bilinear_cropv1.pth'),
+        checkpoint='nfs/checkpoints/teacher_models/swinl_w7.pth'),
     backbone=dict(
         type='SwinTransformer',
         embed_dims=192,
@@ -36,17 +37,18 @@ teacher_model_cfg = dict(
         norm_cfg=dict(type='LN', requires_grad=True),
         pretrain_style='official'),
     decode_head=dict(
-        type='DenseDepthHeadSwinMobile',
-        upsample_type='bilinear',
+        type='DenseDepthHeadLightMobile',
         scale_up=True,
-        min_depth=0.001,
+        min_depth=1e-3,
         max_depth=40,
         in_channels=[192, 384, 768, 1536],
         up_sample_channels=[24, 32, 64, 96],
-        channels=16,
+        channels=16, # last one
         extend_up_conv_num=1,
-        align_corners=True,
-        loss_decode=dict(type='SigLoss', valid_mask=True, loss_weight=1.0)),
+        # align_corners=False, # for upsample
+        align_corners=True, # for upsample
+        loss_decode=dict(
+            type='SigLoss', valid_mask=True, loss_weight=1.0)),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
@@ -67,22 +69,26 @@ student_model_cfg = dict(
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
+        with_loss_depth_grad=True,
+        loss_depth_grad=dict(
+            type='GradDepthLoss', valid_mask=True, loss_weight=0.5),
         loss_decode=dict(
-            type='SigLoss', valid_mask=True, loss_weight=1.0)),
+            type='SigLoss', valid_mask=True, loss_weight=1.0, warm_up=True)),
     # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
+distill_weight=0.1
 model=dict(
     type='DistillWrapper',
-    init_cfg=dict(
-        type='Pretrained',
-        checkpoint='nfs/mobileAI2022/distill_final/swinl_w7_rms_1e-3/epoch_200.pth'),
+    # val_model='teacher',
+    # super_resolution=True,
+    upsample_type='bilinear',
     distill=True,
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    distill_loss=dict(type='MSELoss', loss_weight=0.1),
+    distill_loss=dict(type='MSELoss', loss_weight=distill_weight),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
     img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),
@@ -157,7 +163,7 @@ data = dict(
 )
 
 # optimizer
-max_lr=1e-4
+max_lr=3e-4
 optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
 # learning policy
 # lr_config = dict(
@@ -170,8 +176,17 @@ optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,
 # optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
-
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=100)
+runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
 evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
+
+# find_unused_parameters=True
+
+# custom_hooks = [
+#     dict(type="DistillReweightHook",
+#          max_weight=distill_weight,
+#          momentum=1,
+#          interval=1, 
+#          warm_up=100,)
+# ]

@@ -10,10 +10,10 @@ class DepthEncoderDecoderMobile(DepthEncoderDecoder):
     '''
 
     def __init__(self,
-                 downsample_ratio=4,
+                 gt_target_shape=(480, 640),
                  **kwarg):
         super(DepthEncoderDecoderMobile, self).__init__(**kwarg)
-        self.downsample_ratio = downsample_ratio
+        self.gt_target_shape = gt_target_shape
 
     def encode_decode(self, img, img_metas, rescale=True):
         """Encode images with backbone and decode into a depth estimation
@@ -26,18 +26,12 @@ class DepthEncoderDecoderMobile(DepthEncoderDecoder):
         if rescale:
             out = resize(
                 input=out,
-                size=img.shape[2:],
+                size=self.gt_target_shape,
                 mode='nearest')
         return out
 
     def extract_feat(self, img):
         """Extract features from images."""
-
-        # x4 downsample the input image for speed up
-        img = resize(input=img, 
-                     size=(img.shape[-2] // self.downsample_ratio, img.shape[-1] // self.downsample_ratio), 
-                     mode='bilinear', 
-                     align_corners=True)
 
         x = self.backbone(img)
         if self.with_neck:

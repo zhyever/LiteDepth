@@ -23,19 +23,28 @@ class UpSample(nn.Sequential):
     Reduce to only one 3x3 conv
     
     '''
-    def __init__(self, skip_input, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None):
+    def __init__(self, up_features, skip_features, output_features, conv_cfg=None, norm_cfg=None, act_cfg=None, final_conv=False):
         super(UpSample, self).__init__()
-        self.convA = ConvModule(skip_input, output_features, kernel_size=3, stride=1, padding=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
-        self.hack_act = build_activation_layer(act_cfg)
+
+        self.final_conv = final_conv
+
+        if final_conv is not True:
+            self.convA = ConvModule(up_features+skip_features, output_features, kernel_size=1, stride=1, conv_cfg=conv_cfg, norm_cfg=norm_cfg, act_cfg=act_cfg)
+            self.hack_act = build_activation_layer(act_cfg)
 
     def forward(self, x, concat_with, return_immediately=False):
         up_x = F.interpolate(x, size=[concat_with.size(2), concat_with.size(3)], mode='bilinear', align_corners=True)
-        if return_immediately:
-            temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
-            out = self.hack_act(temp)
-            return out, temp
+
+        if self.final_conv:    
+            return torch.cat([up_x, concat_with], dim=1)
+
         else:
-            return self.convA(torch.cat([up_x, concat_with], dim=1))
+            if return_immediately:
+                temp = self.convA(torch.cat([up_x, concat_with], dim=1), activate=False)
+                out = self.hack_act(temp)
+                return out, temp
+            else:
+                return self.convA(torch.cat([up_x, concat_with], dim=1))
 
 @HEADS.register_module()
 class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
@@ -54,6 +63,8 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                  loss_ssim=None,
                  extend_up_conv_num=0,
                  upsample_type='nearest',
+                 in_index=(0,1,2,3,4),
+                 logits_dim=0,
                  **kwargs):
         super(DenseDepthHeadLightMobile, self).__init__(**kwargs)
 
@@ -73,11 +84,20 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                         kernel_size=1,
                         stride=1,
                         padding=0,
-                        act_cfg=None
+                        act_cfg=self.act_cfg
                     ))
+            elif index == len(self.in_channels) - 1:
+                self.conv_list.append(
+                    UpSample(up_features=up_channel_temp,
+                             skip_features=in_channel,
+                             output_features=up_channel,
+                             norm_cfg=self.norm_cfg,
+                             act_cfg=self.act_cfg,
+                             final_conv=True))
             else:
                 self.conv_list.append(
-                    UpSample(skip_input=in_channel + up_channel_temp,
+                    UpSample(up_features=up_channel_temp,
+                             skip_features=in_channel,
                              output_features=up_channel,
                              norm_cfg=self.norm_cfg,
                              act_cfg=self.act_cfg))
@@ -112,6 +132,13 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
         self.upsample_type = upsample_type
         self.debug = debug
 
+        self.in_index = in_index
+        self.logits_dim = logits_dim
+        final_input_dim = self.in_channels[::-1][0] + self.up_sample_channels[::-1][1]
+        self.conv_depth_3x3 = nn.Conv2d(final_input_dim, self.logits_dim, kernel_size=3, padding=1, stride=1)
+        self.conv_depth_act = nn.ReLU()
+        self.conv_depth_1x1 = nn.Conv2d(self.logits_dim, 1, kernel_size=1, padding=0, stride=1)
+        
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
         for p in self.parameters():
@@ -146,6 +173,7 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
 
         # for i in inputs:
         #     print(i.shape)
+        inputs = [inputs[i] for i in self.in_index]
 
         outputs = {}
 
@@ -157,6 +185,7 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                 if index == 0:
                     temp_feat = self.conv_list[index](feat)
                     temp_feat_list.append(temp_feat)
+                    temp_feat_before_act_list.append(temp_feat)
                 else:
                     skip_feat = feat
                     up_feat = temp_feat_list[index-1]
@@ -174,8 +203,12 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                 temp_feat = self.hack_act(temp_feat_before_act)
                 temp_feat_list.append(temp_feat)
                 temp_feat_before_act_list.append(temp_feat_before_act)
-                
-            depth_pred = self.depth_pred(temp_feat_list[-1])
+            
+
+            temp = self.conv_depth_3x3(temp_feat_list[-1])
+            temp = self.conv_depth_act(temp)
+            depth_pred = self.conv_depth_act(self.conv_depth_1x1(temp))
+            # depth_pred = self.depth_pred(temp_feat_list[-1])
 
         else:
             temp_feat_list = []
@@ -198,7 +231,11 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                     align_corners=True)
                 temp_feat = self.extend_convs[i](temp_feat)
                 temp_feat_list.append(temp_feat)
-            depth_pred = self.depth_pred(temp_feat_list[-1])
+            
+            temp = self.conv_depth_3x3(temp_feat_list[-1])
+            temp = self.conv_depth_act(temp)
+            depth_pred = self.conv_depth_act(self.conv_depth_1x1(temp))
+            # depth_pred = self.depth_pred(temp_feat_list[-1])
 
 
         outputs['depth_pred'] = depth_pred
@@ -221,9 +258,6 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                depth_gt):
         """Compute depth loss."""
         loss = dict()
-
-        resized_output = {}
-
 
         depth_pred = model_outputs['depth_pred']
         
@@ -249,7 +283,6 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
             align_corners=True,
             warning=False)
 
-        
         loss['loss_depth'] = self.loss_decode(depth_pred_upsample, depth_gt)
 
         if self.with_loss_depth_grad:
@@ -275,10 +308,7 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
     def forward(self, inputs, img_metas):
         """Forward function."""
 
-        # print(len(inputs))
-        # for i in inputs:
-        #     print(i.shape)
-
+        inputs = [inputs[i] for i in self.in_index]
         temp_feat_list = []
         
         for index, feat in enumerate(inputs[::-1]):
@@ -300,6 +330,9 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
             temp_feat = self.extend_convs[i](temp_feat)
             temp_feat_list.append(temp_feat)
 
-        output = self.depth_pred(temp_feat_list[-1])
+        temp = self.conv_depth_3x3(temp_feat_list[-1])
+        temp = self.conv_depth_act(temp)
+        output = self.conv_depth_act(self.conv_depth_1x1(temp))
+        # output = self.depth_pred(temp_feat_list[-1])
 
         return output

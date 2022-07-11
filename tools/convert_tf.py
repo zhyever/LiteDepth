@@ -71,14 +71,6 @@ def convert_model(model, args):
     # Converting model to ONNX
     for _ in model.modules():
         _.training = False
-
-    # for k, m in model.named_modules():
-    #     if isinstance(m, nn.Hardswish):
-    #         super_module, leaf_module = get_module_by_name(model, k)
-    #         setattr(super_module, k.split('.')[-1], CustomHardswish())
-    #     if isinstance(m, nn.Hardsigmoid):
-    #         super_module, leaf_module = get_module_by_name(model, k)
-    #         setattr(super_module, k.split('.')[-1], CustomHardsigmoid())
             
     sample_input = torch.randn(1, 3, 480, 640)
     input_nodes = ['input']
@@ -89,10 +81,8 @@ def convert_model(model, args):
     torch.onnx.export(model, sample_input, "nfs/model.onnx", export_params=True, input_names=input_nodes, output_names=output_nodes, opset_version=11)
 
     # Converting model to Tensorflow
-
     print("\n\n\n Start export_graph")
     onnx_model = onnx.load("nfs/model.onnx")
-
 
     print("\n\n\n Start simplify model")
     onnx_model, check = simplify(onnx_model)
@@ -103,10 +93,6 @@ def convert_model(model, args):
     # Exporting the resulting model to TFLite
     print("\n\n\n Start convert onnx")
     converter = tf.lite.TFLiteConverter.from_saved_model("nfs/tf_model")
-    # converter.allow_custom_ops = True
-    # converter.experimental_new_converter = True
-    # converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
-    # converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
     tflite_model = converter.convert()
 
     # model.tflite
@@ -213,18 +199,20 @@ def main():
 
     checkpoint = load_checkpoint(model, args.load_from, map_location='cpu')
     
+    # mean = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    # std = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    # image_normed = (image - mean) / std
+    # model_merge_before = model(image_normed)
+    
     if cfg.model.type == 'DepthEncoderDecoderMobileMergeTF':
         print("Merge image normalization into the first conv layer")
         model.merge_image_normalization()
 
+    # print(model)
     # we need to merge the image normalization into the model forward process
-    # model_std_output = model.backbone.timm_model.conv_stem(image)
-    # mean = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-    # std = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-    # image_reverse_norm = image * std + mean
-    # model.hack_norm()
-    # model_conv_norm_output = model.backbone.timm_model.conv_stem(image_reverse_norm)
-    # print("Merge error:".format(torch.mean(model_conv_norm_output - model_std_output)))
+    # model_merge_after = model(image)
+    # print("Merge error: {}".format(torch.mean(model_merge_before - model_merge_after)))
+    # exit(100)
 
     if args.convert:
         convert_model(model, args)

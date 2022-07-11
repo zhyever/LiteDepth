@@ -13,7 +13,7 @@ teacher_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
         type='Pretrained',
-        checkpoint='nfs/checkpoints/_resnest.pth'),
+        checkpoint='nfs/checkpoints/teacher_models/resnest.pth'),
     backbone=dict(
         type="mmcls.TIMMBackbone",
         pretrained=True,
@@ -53,20 +53,29 @@ student_model_cfg = dict(
         channels=16, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
+        with_loss_depth_grad=True,
+        loss_depth_grad=dict(
+            type='GradDepthLoss', valid_mask=True, loss_weight=0.5),
         loss_decode=dict(
-            type='SigLoss', valid_mask=True, loss_weight=1.0)),
+            type='SigLoss', valid_mask=True, loss_weight=1.0, warm_up=True)),
     # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
+distill_weight=10
 model=dict(
     type='DistillWrapper',
     # val_model='teacher',
+    # super_resolution=True,
+    upsample_type='bilinear',
+    teacher_select_de_index=(1, 2, 3, 4),
+    student_select_de_index=(1, 2, 3, 4),
+    layer_weights=(1, 1, 1, 1),
     distill=True,
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    distill_loss=dict(type='ChannelWiseDivergence', loss_weight=0.5, tau=4),
+    distill_loss=dict(type='SimilarityMSELoss', loss_weight=distill_weight),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
     img_norm_cfg_teacher=dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]),
@@ -144,18 +153,18 @@ data = dict(
 max_lr=3e-4
 optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
 # learning policy
-lr_config = dict(
-    policy='OneCycle',
-    max_lr=max_lr,
-    div_factor=25,
-    final_div_factor=100,
-    by_epoch=False,
-)
+# lr_config = dict(
+#     policy='OneCycle',
+#     max_lr=max_lr,
+#     div_factor=25,
+#     final_div_factor=100,
+#     by_epoch=False,
+# )
+# optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
+lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
-
 # runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
 evaluation = dict(by_epoch=True, interval=10, pre_eval=True)
 
-find_unused_parameters=True

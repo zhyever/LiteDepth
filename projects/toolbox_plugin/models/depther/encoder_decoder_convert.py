@@ -1,3 +1,4 @@
+from argparse import Action
 import torch
 from depth.models.builder import DEPTHER
 from depth.ops import resize
@@ -8,25 +9,24 @@ import torch.nn as nn
 
 import torch.nn.functional as F
 from timm.models.layers import pad_same
-
+from timm.models.layers import Conv2dSame
 
 def conv2d_same(x, weight, bias=None, stride=(1, 1), padding=(0, 0), dilation=(1, 1), groups=1, padding_value=0):
     x = pad_same(x, weight.shape[-2:], stride, dilation, padding_value)
     return F.conv2d(x, weight, bias, stride, (0, 0), dilation, groups)
 
-class Conv2dSame(nn.Conv2d):
+class Conv2dSameHackPadding(nn.Conv2d):
     """ Tensorflow like 'SAME' convolution wrapper for 2D convolutions
     """
 
     def __init__(self, padding_value, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1, bias=True):
-        super(Conv2dSame, self).__init__(
+        super(Conv2dSameHackPadding, self).__init__(
             in_channels, out_channels, kernel_size, stride, 0, dilation, groups, bias)
 
         self.padding_value = padding_value
     def forward(self, x):
         return conv2d_same(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, self.padding_value)
-
 
 @DEPTHER.register_module()
 class DepthEncoderDecoderMobileTF(DepthEncoderDecoderMobile):
@@ -35,11 +35,11 @@ class DepthEncoderDecoderMobileTF(DepthEncoderDecoderMobile):
     '''
 
     def __init__(self,
-                 downsample_ratio=4,
+                 downsample_target=(128, 160),
                  img_norm_cfg=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]),
                  **kwarg):
         super(DepthEncoderDecoderMobile, self).__init__(**kwarg)
-        self.downsample_ratio = downsample_ratio
+        self.downsample_target = downsample_target
 
         self.img_norm_cfg = img_norm_cfg
         assert self.img_norm_cfg["mean"] == self.img_norm_cfg["std"], "only support mean=std now"
@@ -51,7 +51,9 @@ class DepthEncoderDecoderMobileTF(DepthEncoderDecoderMobile):
     def forward(self, input):
         
         # norm the input image
-        input = (input - self.img_norm_mean.expand(input.shape)) / self.img_norm_std.expand(input.shape)
+        # input = (input - self.img_norm_mean.expand(input.shape)) / self.img_norm_std.expand(input.shape)
+        # hack here
+        input = (input - 127.5) / 127.5
 
         out = self.extract_feat(input)
         out = self.decode_head.forward(out, None)
@@ -71,7 +73,7 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
     '''
 
     def __init__(self,
-                 downsample_ratio=4,
+                 downsample_target=(128, 160),
                  img_norm_cfg=dict(mean=[127.5, 127.5, 127.5], std=[127.5, 127.5, 127.5]), # merge image norm
                  **kwarg):
         super(DepthEncoderDecoderMobileMergeTF, self).__init__(**kwarg)
@@ -81,7 +83,7 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
         self.img_norm_mean = torch.tensor(self.img_norm_cfg["mean"])
         self.img_norm_std = torch.tensor(self.img_norm_cfg["std"])
 
-        self.downsample_ratio = downsample_ratio
+        self.downsample_target = downsample_target
         self.decode_head.max_depth = self.decode_head.max_depth * 1000 # scale up 1000 for max_depth in sigmoid
 
 
@@ -91,7 +93,7 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
 
         # ensure the same input padding (only work when img_norm.mean = img_norm.std)
         padding_value = 0 * self.img_norm_std[0] + self.img_norm_mean[0]
-        first_conv = Conv2dSame(
+        first_conv = Conv2dSameHackPadding(
             padding_value, 
             template.in_channels, 
             template.out_channels, 
@@ -124,7 +126,17 @@ class DepthEncoderDecoderMobileMergeTF(DepthEncoderDecoderMobile):
         # replace
         self.backbone.timm_model.conv_stem = first_conv
 
+    def extract_feat(self, img):
+        """Extract features from images."""
 
+        img = resize(input=img, 
+                     size=(self.downsample_target[0], self.downsample_target[1]), 
+                     mode='bilinear', 
+                     align_corners=True)
+
+        x = self.backbone(img)
+        return x
+    
     def forward(self, input):
         
         out = self.extract_feat(input)
