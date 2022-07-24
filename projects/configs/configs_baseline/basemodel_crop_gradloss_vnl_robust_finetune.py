@@ -1,3 +1,6 @@
+
+
+
 _base_ = [
     '../../../Monocular-Depth-Estimation-Toolbox/configs/_base_/default_runtime.py'
 ]
@@ -11,6 +14,8 @@ custom_imports=dict(imports='mmcls.models', allow_failed_imports=False)
 norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
     type='DepthEncoderDecoderMobile',
+    init_cfg=dict(
+        type='Pretrained', checkpoint='nfs/mobileAI2022_final/robust_weight/weight_6e-1_wolog/epoch_600.pth'),
     gt_target_shape=(480, 640),
     backbone=dict(
         type="mmcls.TIMMBackbone",
@@ -24,6 +29,24 @@ model = dict(
         with_loss_depth_grad=True,
         loss_depth_grad=dict(
             type='GradDepthLoss', valid_mask=True, loss_weight=0.25),
+        with_loss_vnl=True,
+        loss_vnl=dict(
+            type='VNLLoss', 
+            focal_x=5.1885790117450188e+02, 
+            focal_y=5.1946961112127485e+02, 
+            input_size=(480, 640),
+            delta_cos=0.867, 
+            delta_diff_x=0.01,
+            delta_diff_y=0.01,
+            delta_diff_z=0.01,
+            delta_z=0.1, #mask invalid depth
+            sample_ratio=0.15,
+            loss_weight=2.5),
+        with_loss_robust=True,
+        loss_robust=dict(
+            type='RobustLoss', 
+            loss_weight=0.6,
+            log=False),
         scale_up=False,
         min_depth=1e-3,
         max_depth=40,
@@ -110,12 +133,12 @@ data = dict(
 )
 
 # optimizer
-max_lr=4e-3
+max_lr=15e-4
 optimizer = dict(type='Adam', lr=max_lr, betas=(0.9, 0.999), eps=1e-3, weight_decay=0, amsgrad=False)
-lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1500, warmup_ratio=0.0001)
+lr_config = dict(policy='poly', power=0.9, min_lr=1e-3, by_epoch=False, warmup_iters=0)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=800)
+runner = dict(type='EpochBasedRunner', max_epochs=300)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=100)
 evaluation = dict(by_epoch=True, interval=25, pre_eval=True)
 

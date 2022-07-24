@@ -32,7 +32,8 @@ class SimilarityMSELoss(nn.Module):
         Returns:
             torch.Tensor: The calculated loss
         """
-        N, C, H, W = feat_s.shape
+        N, C_s, H, W = feat_s.shape
+        N, C_t, H, W = feat_t.shape
 
         #maxpool = nn.MaxPool2d(kernel_size=(patch_h, patch_w), stride=(patch_h, patch_w), padding=0, ceil_mode=True)
         feat_s = self.maxpool(feat_s)
@@ -53,8 +54,9 @@ class SimilarityMSELoss(nn.Module):
 
             valid_mask = mask_i > 0
             mask = valid_mask.expand(feat_s_i.shape).contiguous()
-            valid_feat_s_i = feat_s_i[mask].reshape(C, -1)
-            valid_feat_t_i = feat_t_i[mask].reshape(C, -1)
+            valid_feat_s_i = feat_s_i[mask].reshape(C_s, -1)
+            mask = valid_mask.expand(feat_t_i.shape).contiguous()
+            valid_feat_t_i = feat_t_i[mask].reshape(C_t, -1)
 
             # norm the C dim
             valid_feat_s_i = F.normalize(valid_feat_s_i, p=2, dim=0)
@@ -62,6 +64,9 @@ class SimilarityMSELoss(nn.Module):
 
             similarity_s_i = valid_feat_s_i.permute(1, 0) @ valid_feat_s_i
             similarity_t_i = valid_feat_t_i.permute(1, 0) @ valid_feat_t_i
+
+            # print(similarity_s_i.shape)
+            # print(similarity_t_i.shape)
 
             loss += ((similarity_s_i - similarity_t_i)**2).mean()
 

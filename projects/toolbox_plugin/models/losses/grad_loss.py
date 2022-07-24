@@ -30,6 +30,7 @@ class GradDepthLoss(nn.Module):
         Returns:
         """
         
+        gt_depth = gt_depth.clone()
         if self.valid_mask:
             gt_depth[gt_depth == 0] = np.inf
 

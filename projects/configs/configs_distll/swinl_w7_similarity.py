@@ -78,9 +78,9 @@ teacher_model_cfg = dict(
 student_model_cfg = dict(
     type='DepthEncoderDecoderMobile',
     gt_target_shape=(480, 640),
-    # init_cfg=dict(
-    #     type='Pretrained', 
-    #     checkpoint='nfs/mobileAI2022_final/robust_weight/weight_6e-1_wolog/epoch_600.pth'),
+    init_cfg=dict(
+        type='Pretrained', 
+        checkpoint='nfs/mobileAI2022_final/final_models/model1_650e/epoch_650.pth'),
     backbone=dict(
         type="mmcls.TIMMBackbone",
         pretrained=True,
@@ -125,7 +125,7 @@ student_model_cfg = dict(
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
 
-distill_weight=0.01
+distill_weight=10
 model=dict(
     type='DistillWrapper',
     upsample_type='bilinear',
@@ -133,7 +133,10 @@ model=dict(
     ema=False,
     teacher_depther_cfg=teacher_model_cfg,
     student_depther_cfg=student_model_cfg,
-    distill_loss=dict(type='ChannelWiseDivergence', loss_weight=distill_weight, tau=4),
+    teacher_select_de_index=(0, 2, 3),
+    student_select_de_index=(0, 2, 3),
+    layer_weights=(1, 1, 1),
+    distill_loss=dict(type='SimilarityMSELoss', loss_weight=distill_weight),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
 )
@@ -155,7 +158,10 @@ train_pipeline = [
          teacher_norm_to_rgb=True, 
          student_norm_mean=[127.5, 127.5, 127.5], 
          student_norm_std=[127.5, 127.5, 127.5], 
-         student_norm_to_rgb=True),
+         student_norm_to_rgb=True,
+         norm_mean=[127.5, 127.5, 127.5], 
+         norm_std=[127.5, 127.5, 127.5], 
+         norm_to_rgb=True),
     dict(type='CustomDefaultFormatBundle'),
     dict(type='Collect', keys=['img', 'img_teacher', 'img_student', 'depth_gt']),
 ]
@@ -172,7 +178,10 @@ test_pipeline = [
                  teacher_norm_to_rgb=True, 
                  student_norm_mean=[127.5, 127.5, 127.5], 
                  student_norm_std=[127.5, 127.5, 127.5], 
-                 student_norm_to_rgb=True),
+                 student_norm_to_rgb=True,
+                 norm_mean=[127.5, 127.5, 127.5], 
+                 norm_std=[127.5, 127.5, 127.5], 
+                 norm_to_rgb=True),
             dict(type='ImageToTensor', keys=['img', 'img_teacher', 'img_student']),
             dict(type='Collect', keys=['img', 'img_teacher', 'img_student']),
         ])
@@ -181,10 +190,17 @@ test_pipeline = [
 data = dict(
     samples_per_gpu=16,
     workers_per_gpu=8,
+    # train=dict(
+    #     type=dataset_type,
+    #     pipeline=train_pipeline,
+    #     data_root='data/train',
+    #     test_mode=False,
+    #     min_depth=1e-3,
+    #     depth_scale=1000), # convert to meters
     train=dict(
         type=dataset_type,
         pipeline=train_pipeline,
-        data_root='data/train',
+        data_root='data/trainval',
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000), # convert to meters
@@ -195,20 +211,20 @@ data = dict(
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000),
-    # test=dict(
-    #     type=dataset_type,
-    #     pipeline=test_pipeline,
-    #     data_root='data/online_val',
-    #     test_mode=True,
-    #     min_depth=1e-3,
-    #     depth_scale=1000),
     test=dict(
         type=dataset_type,
         pipeline=test_pipeline,
-        data_root='data/local_val',
-        test_mode=False,
+        data_root='data/online_val',
+        test_mode=True,
         min_depth=1e-3,
-        depth_scale=1000)
+        depth_scale=1000),
+    # test=dict(
+    #     type=dataset_type,
+    #     pipeline=test_pipeline,
+    #     data_root='data/local_val',
+    #     test_mode=False,
+    #     min_depth=1e-3,
+    #     depth_scale=1000)
 )
 
 # optimizer
@@ -218,7 +234,7 @@ lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1/4, by_epoch=False, wa
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=600)
-checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=100)
+checkpoint_config = dict(by_epoch=True, max_keep_ckpts=4, interval=100)
 evaluation = dict(by_epoch=True, interval=25, pre_eval=True)
 
 find_unused_parameters=True

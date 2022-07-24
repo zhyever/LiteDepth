@@ -4,7 +4,7 @@ import os
 
 import torch
 from mmcv.utils import Config
-
+import time
 
 
 import numpy as np
@@ -199,20 +199,19 @@ def main():
 
     checkpoint = load_checkpoint(model, args.load_from, map_location='cpu')
     
-    # mean = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-    # std = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
-    # image_normed = (image - mean) / std
-    # model_merge_before = model(image_normed)
+    mean = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    std = torch.tensor([127.5, 127.5, 127.5]).unsqueeze(dim=0).unsqueeze(dim=-1).unsqueeze(dim=-1)
+    image_normed = (image - mean) / std
+    model_merge_before = model(image_normed)
     
     if cfg.model.type == 'DepthEncoderDecoderMobileMergeTF':
         print("Merge image normalization into the first conv layer")
         model.merge_image_normalization()
 
-    # print(model)
     # we need to merge the image normalization into the model forward process
-    # model_merge_after = model(image)
-    # print("Merge error: {}".format(torch.mean(model_merge_before - model_merge_after)))
-    # exit(100)
+    model_merge_after = model(image)
+    print("Merge error: {}".format(torch.mean(model_merge_before - model_merge_after)))
+    time.sleep(10)
 
     if args.convert:
         convert_model(model, args)

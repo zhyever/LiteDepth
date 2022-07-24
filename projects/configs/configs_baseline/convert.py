@@ -7,36 +7,6 @@ custom_imports=dict(imports='mmcls.models', allow_failed_imports=False)
 
 # model settings
 norm_cfg = dict(type='BN', requires_grad=True)
-# model = dict(
-#     type='DepthEncoderDecoderMobileMerge',
-#     downsample_target=(128, 160),
-#     # downsample_target=(96, 128),
-#     backbone=dict(
-#         type="mmcls.TIMMBackbone",
-#         pretrained=True,
-#         model_name="tf_mobilenetv3_small_minimal_100",
-#         features_only=True),
-#     decode_head=dict(
-#         type='DenseDepthHeadLightMobile',
-#         in_index=(1, 2, 3, 4),
-#         debug=False,
-#         with_loss_depth_grad=True,
-#         loss_depth_grad=dict(
-#             type='GradDepthLoss', valid_mask=True, loss_weight=0.3),
-#         scale_up=False,
-#         min_depth=1e-3,
-#         max_depth=40,
-#         in_channels=[16, 24, 48, 96],
-#         up_sample_channels=[0, 8, 24, 72],
-#         channels=24, # last one
-#         # align_corners=False, # for upsample
-#         align_corners=True, # for upsample
-#         loss_decode=dict(
-#             type='SigLoss', valid_mask=True, loss_weight=1.0)),
-#     # model training and testing settings
-#     train_cfg=dict(),
-#     test_cfg=dict(mode='whole'))
-
 model = dict(
     type='DepthEncoderDecoderMobileMerge',
     downsample_target=(128, 160),
@@ -44,7 +14,7 @@ model = dict(
     backbone=dict(
         type="mmcls.TIMMBackbone",
         pretrained=True,
-        model_name="tf_mobilenetv3_large_minimal_100",
+        model_name="tf_mobilenetv3_small_minimal_100",
         features_only=True),
     decode_head=dict(
         type='DenseDepthHeadLightMobile',
@@ -56,10 +26,9 @@ model = dict(
         scale_up=False,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[24, 40, 112, 960],
+        in_channels=[16, 24, 48, 96],
         up_sample_channels=[0, 8, 24, 72],
-        channels=32, # last one
-        # align_corners=False, # for upsample
+        logits_dim=24,
         align_corners=True, # for upsample
         loss_decode=dict(
             type='SigLoss', valid_mask=True, loss_weight=1.0)),

@@ -160,6 +160,12 @@ def main():
     if cfg.model.type == 'DepthEncoderDecoderMobileMerge':
         print("Merge image normalization into the first conv layer")
         model.merge_image_normalization()
+    
+    print("Switching DBB blocks to deploy mode")
+    for m in model.modules():
+        if hasattr(m, 'switch_to_deploy'):
+            print("Detect one DBB block")
+            m.switch_to_deploy()
 
     # clean gpu memory when starting a new evaluation.
     torch.cuda.empty_cache()

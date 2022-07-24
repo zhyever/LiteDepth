@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-bash ./tools/dist_train.sh projects/configs/configs_resnest/resnest_super_cwd.py 2 --work-dir nfs/mobileAI2022/distill_final_grad_poly_resnest_super/cwd_3e-1_bilinear
+bash ./tools/dist_train.sh projects/configs/configs_baseline/basemodel_crop_gradloss_vnl_robust.py  2 --work-dir nfs/mobileAI2022_final/robust_weight/weight_5e-1_wolog --options 'model.decode_head.loss_robust.log=False' 'model.decode_head.loss_robust.loss_weight=0.5'
 
-bash ./tools/dist_train.sh projects/configs/configs_resnest/resnest_super_cwd.py 2 --work-dir nfs/mobileAI2022/distill_final_grad_poly_resnest_super/cwd_1e-1_bilinear --options 'model.distill_loss.loss_weight=0.1'
-
+bash ./tools/dist_train.sh projects/configs/configs_baseline/basemodel_crop_gradloss_vnl_robust.py  2 --work-dir nfs/mobileAI2022_final/robust_weight/weight_6e-1_wolog --options 'model.decode_head.loss_robust.log=False' 'model.decode_head.loss_robust.loss_weight=0.6'

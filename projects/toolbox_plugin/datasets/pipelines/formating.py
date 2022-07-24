@@ -60,17 +60,29 @@ class CustomDefaultFormatBundle(object):
                 img = np.expand_dims(img, -1)
             img = np.ascontiguousarray(img.transpose(2, 0, 1))
             results['img'] = DC(to_tensor(img), stack=True)
+
+        if 'img_teacher' in results:
+            img = results['img_teacher']
+            if len(img.shape) < 3:
+                img = np.expand_dims(img, -1)
+            img = np.ascontiguousarray(img.transpose(2, 0, 1))
+            results['img_teacher'] = DC(to_tensor(img), stack=True)
+        
+        if 'img_student' in results:
+            img = results['img_student']
+            if len(img.shape) < 3:
+                img = np.expand_dims(img, -1)
+            img = np.ascontiguousarray(img.transpose(2, 0, 1))
+            results['img_student'] = DC(to_tensor(img), stack=True)
+
         if 'depth_gt' in results:
             # unsqueeze here
             results['depth_gt'] = DC(
                 to_tensor(results['depth_gt'][None, ...]),
                 stack=True)
-        # if 'depth_gt_grad' in results:
-        #     # unsqueeze here
-        #     results['depth_gt_grad'] = DC(
-        #         to_tensor(results['depth_gt_grad'][None, ...]),
-        #         stack=True)
         return results
 
     def __repr__(self):
         return self.__class__.__name__
+
+

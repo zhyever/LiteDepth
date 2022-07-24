@@ -1,3 +1,4 @@
+from distutils.command.build import build
 import torch
 import copy
 import mmcv
@@ -15,6 +16,8 @@ from mmcv.runner import force_fp32
 from mmcv.cnn.bricks.activation import build_activation_layer
 
 from mmcv.cnn import ConvModule, xavier_init
+
+from projects.toolbox_plugin.models.utils.dbb_block import DiverseBranchBlock
 
 class UpSample(nn.Sequential):
     '''Fusion module
@@ -36,7 +39,11 @@ class UpSample(nn.Sequential):
         up_x = F.interpolate(x, size=[concat_with.size(2), concat_with.size(3)], mode='bilinear', align_corners=True)
 
         if self.final_conv:    
-            return torch.cat([up_x, concat_with], dim=1)
+            temp = torch.cat([up_x, concat_with], dim=1)
+            if return_immediately:
+                return temp, temp
+            else:
+                return temp
 
         else:
             if return_immediately:
@@ -65,6 +72,19 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                  upsample_type='nearest',
                  in_index=(0,1,2,3,4),
                  logits_dim=0,
+                 with_loss_vnl=False,
+                 loss_vnl=None,
+                 with_loss_pair=False,
+                 loss_pair=None,
+                 with_loss_robust=False,
+                 loss_robust=None,
+                 dbb_block=False,
+                 with_loss_auto_weight=False,
+                 loss_auto_weight=None,
+                 with_loss_sirmse=False,
+                 loss_sirmse=None,
+                 with_loss_grad_error=False,
+                 loss_grad_error=None,
                  **kwargs):
         super(DenseDepthHeadLightMobile, self).__init__(**kwargs)
 
@@ -112,6 +132,31 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
         self.with_loss_ssim = with_loss_ssim
         if self.with_loss_ssim:
             self.loss_ssim = build_loss(loss_ssim)
+        
+        self.with_loss_vnl = with_loss_vnl
+        if self.with_loss_vnl:
+            self.loss_vnl = build_loss(loss_vnl)
+        
+        self.with_loss_pair = with_loss_pair
+        if self.with_loss_pair:
+            self.loss_pair = build_loss(loss_pair)
+
+        self.with_loss_robust = with_loss_robust
+        if self.with_loss_robust:
+            self.loss_robust = build_loss(loss_robust)
+        
+        self.with_loss_auto_weight = with_loss_auto_weight
+        if self.with_loss_auto_weight:
+            self.loss_auto_weight = build_loss(loss_auto_weight)
+
+        
+        self.with_loss_sirmse = with_loss_sirmse
+        if self.with_loss_sirmse:
+            self.loss_sirmse = build_loss(loss_sirmse)
+        
+        self.with_loss_grad_error = with_loss_grad_error
+        if self.with_loss_grad_error:
+            self.loss_grad_error = build_loss(loss_grad_error)
 
         self.extend_convs = nn.ModuleList()
         self.extend_up_conv_num = extend_up_conv_num
@@ -135,16 +180,19 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
         self.in_index = in_index
         self.logits_dim = logits_dim
         final_input_dim = self.in_channels[::-1][0] + self.up_sample_channels[::-1][1]
-        self.conv_depth_3x3 = nn.Conv2d(final_input_dim, self.logits_dim, kernel_size=3, padding=1, stride=1)
-        self.conv_depth_act = nn.ReLU()
+
+        self.dbb_block = dbb_block
+
+        if self.dbb_block:
+            self.conv_depth_3x3 = DiverseBranchBlock(final_input_dim, self.logits_dim, kernel_size=3, padding=1, stride=1, deploy=False)
+        else:
+            self.conv_depth_3x3 = nn.Conv2d(final_input_dim, self.logits_dim, kernel_size=3, padding=1, stride=1)
+            
         self.conv_depth_1x1 = nn.Conv2d(self.logits_dim, 1, kernel_size=1, padding=0, stride=1)
+        self.conv_depth_act = nn.ReLU()
         
     # default init_weights for conv(msra) and norm in ConvModule
     def init_weights(self):
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-                
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 xavier_init(m, distribution='uniform')
@@ -204,11 +252,10 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                 temp_feat_list.append(temp_feat)
                 temp_feat_before_act_list.append(temp_feat_before_act)
             
-
             temp = self.conv_depth_3x3(temp_feat_list[-1])
+            temp_feat_before_act_list.append(temp)
             temp = self.conv_depth_act(temp)
             depth_pred = self.conv_depth_act(self.conv_depth_1x1(temp))
-            # depth_pred = self.depth_pred(temp_feat_list[-1])
 
         else:
             temp_feat_list = []
@@ -235,12 +282,11 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
             temp = self.conv_depth_3x3(temp_feat_list[-1])
             temp = self.conv_depth_act(temp)
             depth_pred = self.conv_depth_act(self.conv_depth_1x1(temp))
-            # depth_pred = self.depth_pred(temp_feat_list[-1])
 
 
         outputs['depth_pred'] = depth_pred
 
-        losses = self.losses(outputs, depth_gt)
+        losses = self.losses(outputs, depth_gt, img_metas)
 
         if self.debug:
             log_imgs = self.log_images(img[0], depth_pred[0], depth_gt[0], img_metas[0])
@@ -255,7 +301,8 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
     @force_fp32(apply_to=('depth_pred', ))
     def losses(self, 
                model_outputs, 
-               depth_gt):
+               depth_gt,
+               img_metas):
         """Compute depth loss."""
         loss = dict()
 
@@ -275,7 +322,7 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
                 mode='bilinear',
                 align_corners=True,
                 warning=False)
-            
+
         depth_gt_downsample = resize(
             input=depth_gt,
             size=depth_pred.shape[2:],
@@ -283,24 +330,63 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
             align_corners=True,
             warning=False)
 
-        loss['loss_depth'] = self.loss_decode(depth_pred_upsample, depth_gt)
+        # NOTE: a simple hack version
+        if self.with_loss_auto_weight:
+            
+            loss_depth = self.loss_decode(depth_pred_upsample, depth_gt)
+            loss_depth_info = loss_depth.clone().detach()
+            loss['info_sigloss'] = loss_depth_info
 
-        if self.with_loss_depth_grad:
-            # generate depth grad
+            depth_grad, gt_x_grad, gt_y_grad, pred_x_grad, pred_y_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample, debug=True)
+            loss_depth_grad = depth_grad
 
-            if self.debug:
-                depth_grad, gt_x_grad, gt_y_grad, pred_x_grad, pred_y_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample, debug=True)
-                loss["img_gt_x_grad"] = gt_x_grad[0]
-                loss["img_gt_y_grad"] = gt_y_grad[0]
-                loss["img_pred_x_grad"] = pred_x_grad[0]
-                loss["img_pred_y_grad"] = pred_y_grad[0]
-                loss['loss_depth_grad'] = depth_grad
-            else:
-                depth_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample)
-                loss['loss_depth_grad'] = depth_grad
+            loss_depth_vnl = self.loss_vnl(depth_pred, depth_gt_downsample)
+            
+            loss_depth_robust_loss = self.loss_robust(depth_pred_upsample, depth_gt)
 
-        if self.with_loss_ssim:
-            loss['loss_depth_ssim'] = self.loss_ssim(depth_pred_upsample, depth_gt)
+            loss['loss_depth'] = self.loss_auto_weight(loss_depth, loss_depth_grad, loss_depth_vnl, loss_depth_robust_loss)
+
+            weight_info = self.loss_auto_weight.params.clone().detach()
+            loss['weight_sigloss'] = weight_info[0]
+            loss['weight_grad'] = weight_info[1]
+            loss['weight_vnl'] = weight_info[2]
+            loss['weight_robust'] = weight_info[3]
+
+        else:
+
+            loss['loss_depth'] = self.loss_decode(depth_pred_upsample, depth_gt)
+
+            if self.with_loss_depth_grad:
+                # generate depth grad
+
+                if self.debug:
+                    depth_grad, gt_x_grad, gt_y_grad, pred_x_grad, pred_y_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample, debug=True)
+                    loss["img_gt_x_grad"] = gt_x_grad[0]
+                    loss["img_gt_y_grad"] = gt_y_grad[0]
+                    loss["img_pred_x_grad"] = pred_x_grad[0]
+                    loss["img_pred_y_grad"] = pred_y_grad[0]
+                    loss['loss_depth_grad'] = depth_grad
+                else:
+                    depth_grad = self.loss_depth_grad(depth_pred, depth_gt_downsample)
+                    loss['loss_depth_grad'] = depth_grad
+
+            if self.with_loss_ssim:
+                loss['loss_depth_ssim'] = self.loss_ssim(depth_pred_upsample, depth_gt)
+            
+            if self.with_loss_vnl:
+                loss['loss_depth_vnl'] = self.loss_vnl(depth_pred, depth_gt_downsample)
+            
+            if self.with_loss_pair:
+                loss['loss_depth_pair_loss'] = self.loss_pair(depth_pred, depth_gt_downsample)
+
+            if self.with_loss_robust:
+                loss['loss_depth_robust_loss'] = self.loss_robust(depth_pred_upsample, depth_gt)
+            
+            if self.with_loss_sirmse:
+                loss['loss_depth_sirmse_loss'] = self.loss_sirmse(depth_pred_upsample, depth_gt)
+
+            if self.with_loss_grad_error:
+                loss['loss_grad_error'] = self.loss_grad_error(depth_pred_upsample, depth_gt)
 
         return loss
 
@@ -333,6 +419,5 @@ class DenseDepthHeadLightMobile(DepthBaseDecodeHead):
         temp = self.conv_depth_3x3(temp_feat_list[-1])
         temp = self.conv_depth_act(temp)
         output = self.conv_depth_act(self.conv_depth_1x1(temp))
-        # output = self.depth_pred(temp_feat_list[-1])
 
         return output

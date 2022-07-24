@@ -12,7 +12,7 @@ norm_cfg = dict(type='BN', requires_grad=True)
 model = dict(
     type='DepthEncoderDecoderMobile',
     init_cfg=dict(
-            type='Pretrained', checkpoint='nfs/mobileAI2022_new/basemodel_nyu_pretrain/epoch_100.pth'),
+        type='Pretrained', checkpoint='nfs/mobileAI2022_new/grad_weight/2e-1/epoch_500.pth'),
     gt_target_shape=(480, 640),
     backbone=dict(
         type="mmcls.TIMMBackbone",
@@ -21,21 +21,21 @@ model = dict(
         features_only=True),
     decode_head=dict(
         type='DenseDepthHeadLightMobile',
-        in_index=(0, 1, 2, 3, 4),
-        debug=False,
+        in_index=(1, 2, 3, 4),
+        debug=True,
         with_loss_depth_grad=True,
         loss_depth_grad=dict(
-            type='GradDepthLoss', valid_mask=True, loss_weight=0.3),
-        # scale_up=True,
+            type='GradDepthLoss', valid_mask=True, loss_weight=0.2),
+        scale_up=False,
         min_depth=1e-3,
         max_depth=40,
-        in_channels=[16, 16, 24, 48, 96],
-        up_sample_channels=[0, 16, 24, 48, 96],
-        channels=32, # last one
+        in_channels=[16, 24, 48, 96],
+        up_sample_channels=[0, 8, 24, 72],
+        logits_dim=24, # last one
         # align_corners=False, # for upsample
         align_corners=True, # for upsample
         loss_decode=dict(
-            type='SigLoss', valid_mask=True, loss_weight=1.0, warm_up=True)),
+            type='SigLoss', valid_mask=True, loss_weight=1.0)),
     # model training and testing settings
     train_cfg=dict(),
     test_cfg=dict(mode='whole'))
@@ -50,10 +50,7 @@ train_pipeline = [
     dict(type='DepthLoadAnnotations'),
     dict(type='RandomRotate', prob=0.5, degree=2.5),
     dict(type='RandomFlip', prob=0.5),
-    # dict(type='RandomCropV2', pick_mode=True, crop_size=[(360, 512), (360, 640), (480, 512), (480, 640)]),
-    # dict(type='RandomCropV2', pick_mode=True, crop_size=[(360, 512)]),
-    # dict(type='RandomCropV2', pick_mode=True, crop_size=[(360, 512), (480, 640)]),
-    dict(type='RandomCropV2', pick_mode=True, crop_size=[(120, 256), (240, 384), (360, 512), (480, 640)]), # 
+    dict(type='RandomCropV2', pick_mode=True, crop_size=[(240, 384), (360, 512), (480, 640)]),
     dict(type='ResizeImg', img_scale_ori=(480, 640), img_scale_target=(128, 160)),
     dict(type='ColorAug', prob=1, gamma_range=[0.9, 1.1], brightness_range=[0.75, 1.25], color_range=[0.9, 1.1]),
     dict(type='Normalize', **img_norm_cfg),
@@ -107,15 +104,13 @@ data = dict(
 )
 
 # optimizer
-# max_lr=3e-4
-# optimizer = dict(type='AdamW', lr=max_lr, betas=(0.95, 0.99), weight_decay=0.01,)
-
-max_lr=3e-3
+max_lr=1e-3
 optimizer = dict(type='Adam', lr=max_lr, betas=(0.9, 0.999), eps=1e-3, weight_decay=0, amsgrad=False)
-
-lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000)
+lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000, warmup_ratio=0.001)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=500)
-checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=10)
-evaluation = dict(by_epoch=True, interval=25, pre_eval=True)
+runner = dict(type='EpochBasedRunner', max_epochs=200)
+checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=100)
+evaluation = dict(by_epoch=True, interval=50, pre_eval=True)
+
+find_unused_parameters=True
