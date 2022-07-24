@@ -6,3 +6,11 @@
 [submodule "mmclassification"]
 	path = mmclassification
 	url = git@github.com:open-mmlab/mmclassification.git
+
+[submodule "robust_loss_pytorch"]
+	path = robust_loss_pytorch
+	url = git@github.com:jonbarron/robust_loss_pytorch.git
+
+[submodule "pytorch-image-models-mobileAI2022"]
+	path = pytorch-image-models
+	url = git@github.com:zhyever/pytorch-image-models-mobileAI2022.git

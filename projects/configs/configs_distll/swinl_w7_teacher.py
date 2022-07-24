@@ -107,20 +107,20 @@ test_pipeline = [
 data = dict(
     samples_per_gpu=8,
     workers_per_gpu=8,
-    # train=dict(
-    #     type=dataset_type,
-    #     pipeline=train_pipeline,
-    #     data_root='data/train',
-    #     test_mode=False,
-    #     min_depth=1e-3,
-    #     depth_scale=1000), # convert to meters
     train=dict(
         type=dataset_type,
         pipeline=train_pipeline,
-        data_root='data/trainval',
+        data_root='data/train',
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000), # convert to meters
+    # train=dict(
+    #     type=dataset_type,
+    #     pipeline=train_pipeline,
+    #     data_root='data/trainval',
+    #     test_mode=False,
+    #     min_depth=1e-3,
+    #     depth_scale=1000), # convert to meters
     val=dict(
         type=dataset_type,
         pipeline=test_pipeline,
@@ -161,7 +161,8 @@ optimizer = dict(
 lr_config = dict(policy='poly', power=0.9, min_lr=max_lr*1e-2, by_epoch=False, warmup='linear', warmup_iters=1000, warmup_ratio=0.001)
 optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=600)
+# runner = dict(type='EpochBasedRunner', max_epochs=600)
+runner = dict(type='EpochBasedRunner', max_epochs=200)
 checkpoint_config = dict(by_epoch=True, max_keep_ckpts=2, interval=100)
 evaluation = dict(by_epoch=True, interval=999, pre_eval=True)
 

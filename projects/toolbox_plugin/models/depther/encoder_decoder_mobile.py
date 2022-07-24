@@ -8,6 +8,12 @@ from depth.ops import resize
 from collections import OrderedDict
 import torch.distributed as dist
 
+
+import mmcv
+import numpy as np
+from depth.utils import colorize
+
+
 @DEPTHER.register_module()
 class DepthEncoderDecoderMobile(DepthEncoderDecoder):
     r'''
@@ -152,3 +158,47 @@ class DepthEncoderDecoderMobile(DepthEncoderDecoder):
             log_vars[loss_name] = loss_value.item()
 
         return loss, log_vars
+
+    def show_result(self,
+                    img,
+                    result,
+                    win_name='',
+                    show=False,
+                    wait_time=0,
+                    out_file=None,
+                    format_only=False):
+        """Draw `result` over `img`.
+
+        Args:
+            img (str or Tensor): The image to be displayed.
+            result (Tensor): The depth estimation results.
+            win_name (str): The window name.
+            wait_time (int): Value of waitKey param.
+                Default: 0.
+            show (bool): Whether to show the image.
+                Default: False.
+            out_file (str or None): The filename to write the image.
+                Default: None.
+        Returns:
+            img (Tensor): Only if not `show` or `out_file`
+        """
+        img = mmcv.imread(img)
+        img = img.copy()
+        depth = result[0]
+
+        if show:
+            mmcv.imshow(img, win_name, wait_time)
+
+        if format_only:
+            if out_file is not None:
+                np.save(out_file, depth) # only save the value.
+        else:
+            if out_file is not None:
+                # depth = colorize(depth, vmin=self.student_depther.decode_head.min_depth, vmax=self.student_depther.decode_head.max_depth)
+                depth = colorize(depth, vmin=None, vmax=None)
+                mmcv.imwrite(depth.squeeze(), out_file)
+
+        if not (show or out_file):
+            warnings.warn('show==False and out_file is not specified, only '
+                          'result depth will be returned')
+            return depth

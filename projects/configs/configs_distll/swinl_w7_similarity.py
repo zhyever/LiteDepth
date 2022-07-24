@@ -139,6 +139,7 @@ model=dict(
     distill_loss=dict(type='SimilarityMSELoss', loss_weight=distill_weight),
     train_cfg=dict(),
     test_cfg=dict(mode='whole'),
+    val_model='teacher',
 )
 
 # dataset settings Only for test
@@ -211,20 +212,20 @@ data = dict(
         test_mode=False,
         min_depth=1e-3,
         depth_scale=1000),
-    test=dict(
-        type=dataset_type,
-        pipeline=test_pipeline,
-        data_root='data/online_val',
-        test_mode=True,
-        min_depth=1e-3,
-        depth_scale=1000),
     # test=dict(
     #     type=dataset_type,
     #     pipeline=test_pipeline,
-    #     data_root='data/local_val',
-    #     test_mode=False,
+    #     data_root='data/online_val',
+    #     test_mode=True,
     #     min_depth=1e-3,
-    #     depth_scale=1000)
+    #     depth_scale=1000),
+    test=dict(
+        type=dataset_type,
+        pipeline=test_pipeline,
+        data_root='data/local_val',
+        test_mode=False,
+        min_depth=1e-3,
+        depth_scale=1000)
 )
 
 # optimizer
